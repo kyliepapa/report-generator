@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Aquamizer Report Generator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="app-shell">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-icon">A</div>
+            <div class="brand-text">
+                <span class="brand-name">Aquamizer</span>
+                <span class="brand-sub">Report Generator</span>
+            </div>
+        </div>
+
+        <div class="form-card">
+
+            <div class="field-group">
+                <label class="field-label">Project ID</label>
+                <input id="projectId" class="field-input" placeholder="e.g. 99615753" autocomplete="off" />
+            </div>
+
+            <div class="field-group">
+                <label class="field-label">Project Name <span class="optional">(optional)</span></label>
+                <input id="projectName" class="field-input" placeholder="e.g. Belovida Phase 2" autocomplete="off" />
+            </div>
+
+            <div class="field-group">
+                <label class="field-label">Multiple bathrooms per unit?</label>
+                <div class="toggle-row">
+                    <button class="toggle" data-group="multi" data-value="Yes">Yes</button>
+                    <button class="toggle" data-group="multi" data-value="No">No</button>
+                </div>
+            </div>
+
+            <div class="field-group" id="bathNamesGroup">
+                <label class="field-label">Bathroom names <span class="optional">(optional)</span></label>
+                <div class="bath-grid">
+                    <input class="bath field-input" placeholder="e.g. Master" />
+                    <input class="bath field-input" placeholder="e.g. Guest" />
+                    <input class="bath field-input" placeholder="e.g. Hall" />
+                    <input class="bath field-input" placeholder="e.g. En Suite" />
+                </div>
+            </div>
+
+            <div class="field-group">
+                <label class="field-label">Unit label format</label>
+                <div class="toggle-row">
+                    <button class="toggle" data-group="format" data-value="123">123</button>
+                    <button class="toggle" data-group="format" data-value="123 A">123 A</button>
+                    <button class="toggle" data-group="format" data-value="A 123">A 123</button>
+                </div>
+            </div>
+
+            <div id="error" class="error-msg" aria-live="polite"></div>
+
+            <button id="generateBtn" class="generate-btn">
+                <span class="btn-icon">▶</span>
+                <span class="btn-label">Generate Report</span>
+            </button>
+
+        </div>
+    </aside>
+
+    <!-- MAIN PANEL -->
+    <main class="main-panel">
+        <div class="terminal-header">
+            <span class="terminal-title">Progress</span>
+            <span class="terminal-status" id="terminalStatus">Idle</span>
+        </div>
+        <pre id="terminal" class="terminal"></pre>
+
+        <div id="reportActions" class="report-actions" style="display:none;">
+            <button class="action-btn primary" id="openReportBtn">
+                ↗ Open Report
+            </button>
+        </div>
+    </main>
+
+</div>
+
+<script src="/static/script.js"></script>
+</body>
+</html>
