@@ -1,5 +1,5 @@
 <!DOCTYPE html><html><head>
-    <title>CATALONIA — Report</title>
+    <title>Catalonia — Report</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         :root {
@@ -162,8 +162,8 @@
 
     <div class="container">
         <div class="report-header">
-            <h1>CATALONIA</h1>
-            <div class="meta">Installation Photos | Generated 2026-03-27 10:39</div>
+            <h1>Catalonia</h1>
+            <div class="meta">Installation Photos | Generated 2026-03-27 16:38</div>
             
 <button id="pdfBtn" onclick="generatePDF()" style="
     margin-top:16px; padding:11px 26px; font-size:15px;
@@ -228,45 +228,47 @@ document.addEventListener('keydown', function(e) {
 function generatePDF() {
     const params = new URLSearchParams(window.location.search);
     const btn = document.getElementById('pdfBtn');
+    const status = document.getElementById('pdfStatus');
     const bar = document.getElementById('pdfProgressBar');
     const barWrap = document.getElementById('pdfProgressWrap');
-    const status = document.getElementById('pdfStatus');
 
     btn.disabled = true;
-    btn.textContent = 'Generating...';
-    barWrap.style.display = 'block';
-    status.textContent = 'Starting PDF generation...';
+    btn.textContent = "Generating...";
+    barWrap.style.display = "block";
+    bar.style.width = "0%";
+    status.textContent = "Starting...";
 
-    let progress = 0;
-    const interval = setInterval(() => {
-        progress = Math.min(progress + Math.random() * 8, 88);
-        bar.style.width = progress + '%';
-    }, 600);
+    const evtSource = new EventSource(`/generate_pdf_stream?${params}`);
 
-    fetch(`/generate_pdf?${params}`)
-        .then(res => res.json())
-        .then(data => {
-            clearInterval(interval);
-            bar.style.width = '100%';
-            if (data.status === 'success') {
-                status.textContent = '✅ PDF ready!';
-                btn.textContent = 'Open PDF';
-                btn.disabled = false;
-                btn.onclick = () => window.open(`/reports/${data.filename}`);
-            } else {
-                status.textContent = '❌ Error: ' + data.message;
-                btn.textContent = 'Try Again';
-                btn.disabled = false;
-                btn.onclick = generatePDF;
-            }
-        })
-        .catch(err => {
-            clearInterval(interval);
-            status.textContent = '❌ Server error';
-            btn.textContent = 'Try Again';
-            btn.disabled = false;
-            btn.onclick = generatePDF;
-        });
+    evtSource.onmessage = function(event) {
+        status.textContent = event.data;
+
+        let current = parseFloat(bar.style.width) || 0;
+        if (current < 90) {
+            bar.style.width = (current + 2) + "%";
+        }
+    };
+
+    evtSource.addEventListener("complete", function() {
+        bar.style.width = "100%";
+        status.textContent = "✅ PDF ready!";
+
+        btn.textContent = "Open PDF";
+        btn.disabled = false;
+
+        btn.onclick = () => window.open("/report");
+
+        evtSource.close();
+    });
+
+    evtSource.addEventListener("error", function() {
+        status.textContent = "❌ Error generating PDF";
+        btn.textContent = "Try Again";
+        btn.disabled = false;
+        btn.onclick = generatePDF;
+
+        evtSource.close();
+    });
 }
 </script>
 </body></html>

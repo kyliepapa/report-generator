@@ -202,7 +202,7 @@ def fetch_photos():
 
     while True:
         url = f"{url_base}?page={page}&per_page={per_page}"
-        r = requests.get(url, headers=headers)
+        r = requests.get(url, headers=headers, timeout=15)
 
         if r.status_code != 200:
             print("[ERROR] API Error:", r.text)
@@ -224,14 +224,37 @@ def fetch_photos():
 
     return all_photos
 
+# Pre-timeout & retries version
+# def fetch_tags(photo_id):
+#     url = f"https://api.companycam.com/v2/photos/{photo_id}/tags"
+#     headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
+#     r = requests.get(url, headers=headers)
 
-def fetch_tags(photo_id):
+#     if r.status_code == 200:
+#         return [t["display_value"] for t in r.json()]
+#     return []
+
+# Post timeout & retries version
+def fetch_tags(photo_id, retries=3):
     url = f"https://api.companycam.com/v2/photos/{photo_id}/tags"
     headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
-    r = requests.get(url, headers=headers)
 
-    if r.status_code == 200:
-        return [t["display_value"] for t in r.json()]
+    for attempt in range(retries):
+        try:
+            r = requests.get(url, headers=headers, timeout=15)
+
+            if r.status_code == 200:
+                return [t["display_value"] for t in r.json()]
+            else:
+                print(f"[WARN] Bad response for {photo_id}: {r.status_code}")
+
+        except Exception as e:
+            print(f"[ERROR] Attempt {attempt+1} failed for {photo_id}: {e}")
+
+        # wait before retrying
+        time.sleep(1)
+
+    print(f"[FAIL] Could not fetch tags for {photo_id}")
     return []
 
 
@@ -509,50 +532,99 @@ document.addEventListener('keydown', function(e) {
 </script>
 """
 
+# PDF_PROGRESS_JS = """
+# <script>
+# function generatePDF() {
+#     const params = new URLSearchParams(window.location.search);
+#     const btn = document.getElementById('pdfBtn');
+#     const bar = document.getElementById('pdfProgressBar');
+#     const barWrap = document.getElementById('pdfProgressWrap');
+#     const status = document.getElementById('pdfStatus');
+
+#     btn.disabled = true;
+#     btn.textContent = 'Generating...';
+#     barWrap.style.display = 'block';
+#     status.textContent = 'Starting PDF generation...';
+
+#     let progress = 0;
+#     const interval = setInterval(() => {
+#         progress = Math.min(progress + Math.random() * 8, 88);
+#         bar.style.width = progress + '%';
+#     }, 600);
+
+#     fetch(`/generate_pdf?${params}`)
+#         .then(res => res.json())
+#         .then(data => {
+#             clearInterval(interval);
+#             bar.style.width = '100%';
+#             if (data.status === 'success') {
+#                 status.textContent = '✅ PDF ready!';
+#                 btn.textContent = 'Open PDF';
+#                 btn.disabled = false;
+#                 btn.onclick = () => window.open(`/reports/${data.filename}`);
+#             } else {
+#                 status.textContent = '❌ Error: ' + data.message;
+#                 btn.textContent = 'Try Again';
+#                 btn.disabled = false;
+#                 btn.onclick = generatePDF;
+#             }
+#         })
+#         .catch(err => {
+#             clearInterval(interval);
+#             status.textContent = '❌ Server error';
+#             btn.textContent = 'Try Again';
+#             btn.disabled = false;
+#             btn.onclick = generatePDF;
+#         });
+# }
+# </script>
+# """
 PDF_PROGRESS_JS = """
 <script>
 function generatePDF() {
     const params = new URLSearchParams(window.location.search);
     const btn = document.getElementById('pdfBtn');
+    const status = document.getElementById('pdfStatus');
     const bar = document.getElementById('pdfProgressBar');
     const barWrap = document.getElementById('pdfProgressWrap');
-    const status = document.getElementById('pdfStatus');
 
     btn.disabled = true;
-    btn.textContent = 'Generating...';
-    barWrap.style.display = 'block';
-    status.textContent = 'Starting PDF generation...';
+    btn.textContent = "Generating...";
+    barWrap.style.display = "block";
+    bar.style.width = "0%";
+    status.textContent = "Starting...";
 
-    let progress = 0;
-    const interval = setInterval(() => {
-        progress = Math.min(progress + Math.random() * 8, 88);
-        bar.style.width = progress + '%';
-    }, 600);
+    const evtSource = new EventSource(`/generate_pdf_stream?${params}`);
 
-    fetch(`/generate_pdf?${params}`)
-        .then(res => res.json())
-        .then(data => {
-            clearInterval(interval);
-            bar.style.width = '100%';
-            if (data.status === 'success') {
-                status.textContent = '✅ PDF ready!';
-                btn.textContent = 'Open PDF';
-                btn.disabled = false;
-                btn.onclick = () => window.open(`/reports/${data.filename}`);
-            } else {
-                status.textContent = '❌ Error: ' + data.message;
-                btn.textContent = 'Try Again';
-                btn.disabled = false;
-                btn.onclick = generatePDF;
-            }
-        })
-        .catch(err => {
-            clearInterval(interval);
-            status.textContent = '❌ Server error';
-            btn.textContent = 'Try Again';
-            btn.disabled = false;
-            btn.onclick = generatePDF;
-        });
+    evtSource.onmessage = function(event) {
+        status.textContent = event.data;
+
+        let current = parseFloat(bar.style.width) || 0;
+        if (current < 90) {
+            bar.style.width = (current + 2) + "%";
+        }
+    };
+
+    evtSource.addEventListener("complete", function() {
+        bar.style.width = "100%";
+        status.textContent = "✅ PDF ready!";
+
+        btn.textContent = "Open PDF";
+        btn.disabled = false;
+
+        btn.onclick = () => window.open("/report");
+
+        evtSource.close();
+    });
+
+    evtSource.addEventListener("error", function() {
+        status.textContent = "❌ Error generating PDF";
+        btn.textContent = "Try Again";
+        btn.disabled = false;
+        btn.onclick = generatePDF;
+
+        evtSource.close();
+    });
 }
 </script>
 """
