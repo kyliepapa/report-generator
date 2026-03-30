@@ -87,8 +87,71 @@ function pollJob(jobId, onComplete, onError) {
 }
 
 // ================================
-// RESET UI HELPERS
+// TAG BUILDER — Special Rooms
 // ================================
+const tagBuilder  = document.getElementById('specialRoomsBuilder');
+const tagInput    = document.getElementById('specialRoomInput');
+let   specialRoomTags = []; // source of truth: array of strings
+
+function renderPills() {
+    // Remove all existing pills (leave the input in place)
+    tagBuilder.querySelectorAll('.tag-pill').forEach(p => p.remove());
+
+    specialRoomTags.forEach((tag, idx) => {
+        const pill = document.createElement('span');
+        pill.className = 'tag-pill';
+        pill.dataset.idx = idx;
+
+        const label = document.createElement('span');
+        label.textContent = tag;
+
+        const x = document.createElement('span');
+        x.className = 'tag-pill-x';
+        x.innerHTML = '&#x2715;';
+        x.title = 'Remove';
+        x.addEventListener('click', (e) => {
+            e.stopPropagation();
+            specialRoomTags.splice(idx, 1);
+            renderPills();
+        });
+
+        pill.appendChild(label);
+        pill.appendChild(x);
+        // Insert before the input field
+        tagBuilder.insertBefore(pill, tagInput);
+    });
+}
+
+function commitTag() {
+    const val = tagInput.value.trim();
+    if (!val) return;
+    // Avoid exact duplicates (case-insensitive)
+    if (!specialRoomTags.some(t => t.toLowerCase() === val.toLowerCase())) {
+        specialRoomTags.push(val);
+        renderPills();
+    }
+    tagInput.value = '';
+}
+
+tagInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ',') {
+        e.preventDefault();
+        commitTag();
+    }
+    // Backspace on empty input removes last pill
+    if (e.key === 'Backspace' && tagInput.value === '' && specialRoomTags.length > 0) {
+        specialRoomTags.pop();
+        renderPills();
+    }
+});
+
+// Also commit on blur so tabbing away saves the current text
+tagInput.addEventListener('blur', commitTag);
+
+// Clicking anywhere in the builder focuses the input
+tagBuilder.addEventListener('click', () => tagInput.focus());
+
+
 function resetBtn() {
     const btn = document.getElementById('generateBtn');
     btn.disabled = false;
@@ -104,6 +167,10 @@ document.getElementById('generateBtn').addEventListener('click', () => {
     const baths = Array.from(document.querySelectorAll('.bath'))
         .map(b => b.value.trim())
         .filter(b => b !== '');
+
+    // Commit any partially-typed tag before reading
+    commitTag();
+    const specialRooms = [...specialRoomTags];  // snapshot of pill state
 
     const errorDiv = document.getElementById('error');
     errorDiv.textContent = '';
@@ -130,11 +197,12 @@ document.getElementById('generateBtn').addEventListener('click', () => {
     document.getElementById('reportActions').style.display = 'none';
 
     const payload = {
-        project_id:   projectId,
-        project_name: projectName || projectId,
-        multi_bath:   selected.multi,
-        label_format: selected.format,
-        bath_names:   baths.join(','),
+        project_id:    projectId,
+        project_name:  projectName || projectId,
+        multi_bath:    selected.multi,
+        label_format:  selected.format,
+        bath_names:    baths.join(','),
+        special_rooms: specialRooms.join(','),
     };
 
     // POST to kick off the background job

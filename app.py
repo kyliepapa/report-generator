@@ -16,6 +16,7 @@ from newreport import (
     set_inputs,
     configure_sorting,
     configure_bathrooms,
+    configure_special_rooms,
     analyze_missing_photos,
     determine_html_method,
 )
@@ -85,6 +86,7 @@ def start_job():
     multi_bath   = data.get('multi_bath')
     label_format = data.get('label_format')
     bath_names   = data.get('bath_names', '').split(',')
+    special_rooms = [r.strip() for r in data.get('special_rooms', '').split(',') if r.strip()]
 
     with jobs_lock:
         jobs[job_id] = _new_job()
@@ -92,9 +94,10 @@ def start_job():
     def run():
         try:
             _log(job_id, "⚙️ Configuring inputs...")
-            set_inputs(project_id, multi_bath, label_format, bath_names, project_name)
+            set_inputs(project_id, multi_bath, label_format, bath_names, project_name, special_rooms)
             configure_sorting()
             configure_bathrooms()
+            configure_special_rooms()
 
             _log(job_id, "📥 Fetching photos...")
             photos = fetch_photos()
@@ -121,7 +124,7 @@ def start_job():
             photos.sort(key=lambda p: get_sort_key(p, unit_bath_map))
 
             _log(job_id, "🧩 Structuring data...")
-            structured = organize_photos(photos, unit_bath_map)
+            structured, special_rooms_structured = organize_photos(photos, unit_bath_map)
 
             _log(job_id, "🔍 Analyzing missing photos...")
             missing = analyze_missing_photos(structured)
@@ -133,11 +136,13 @@ def start_job():
                 _log(job_id, f"🔴 {loc}")
             for loc in missing_after:
                 _log(job_id, f"🟡 {loc}")
+            if special_rooms_structured:
+                _log(job_id, f"🏛 Special areas: {', '.join(special_rooms_structured.keys())}")
 
             _log(job_id, "🏗 Generating HTML report...")
             from newreport import SORT_METHOD_KEY as SMK
             html_func = determine_html_method(SMK)
-            html_func(structured)
+            html_func(structured, special_rooms_structured)
 
             _log(job_id, "✅ HTML report ready!")
             _finish(job_id, "complete")
@@ -182,6 +187,7 @@ def start_pdf_job():
     multi_bath   = data.get('multi_bath')
     label_format = data.get('label_format')
     bath_names   = data.get('bath_names', '').split(',')
+    special_rooms = [r.strip() for r in data.get('special_rooms', '').split(',') if r.strip()]
 
     with jobs_lock:
         jobs[job_id] = _new_job()
@@ -189,9 +195,10 @@ def start_pdf_job():
     def run():
         try:
             _log(job_id, "📄 Starting PDF generation...")
-            set_inputs(project_id, multi_bath, label_format, bath_names, project_name)
+            set_inputs(project_id, multi_bath, label_format, bath_names, project_name, special_rooms)
             configure_sorting()
             configure_bathrooms()
+            configure_special_rooms()
 
             _log(job_id, "📥 Fetching photos...")
             photos = fetch_photos()
@@ -211,11 +218,12 @@ def start_pdf_job():
             _log(job_id, "🧩 Organizing photos...")
             unit_bath_map = build_unit_bathroom_map(photos)
             photos.sort(key=lambda p: get_sort_key(p, unit_bath_map))
-            structured = organize_photos(photos, unit_bath_map)
+            structured, special_rooms_structured = organize_photos(photos, unit_bath_map)
 
             _log(job_id, "🏗 Building PDF...")
-            context = build_pdf_context(structured, photos)
+            context = build_pdf_context(structured, photos, special_rooms_structured)
             context["structured"] = structured
+            context["special_rooms_structured"] = special_rooms_structured
             filename = generate_pdf_report(context)
 
             _log(job_id, "✅ PDF ready!")

@@ -20,15 +20,17 @@ PROJECT_NAME = None
 multi_bath_bool = False
 label_format = "123"
 bathrooms_input = []
+special_rooms_input = []
 
-def set_inputs(project_id, multi_bath, label_fmt, baths, project_name=None):
-    global PROJECT_ID, PROJECT_NAME, multi_bath_bool, label_format, bathrooms_input
+def set_inputs(project_id, multi_bath, label_fmt, baths, project_name=None, special_rooms=None):
+    global PROJECT_ID, PROJECT_NAME, multi_bath_bool, label_format, bathrooms_input, special_rooms_input
 
     PROJECT_ID = project_id
     PROJECT_NAME = project_name if project_name else project_id
     multi_bath_bool = multi_bath.lower() == "yes"
     label_format = label_fmt
     bathrooms_input = [b for b in baths if b.strip()]
+    special_rooms_input = [r.strip() for r in (special_rooms or []) if r.strip()]
 
 
 ACCESS_TOKEN = "3kfMeyhnKVfoPhXfMJeMfNH4V71I8uS0ZDgvYVJ2ZG0".strip()
@@ -39,6 +41,7 @@ def make_bathroom_order(bath_list):
 
 
 PHASE_ORDER = ["UNTAGGED", "BEFORE", "AFTER"]
+SPECIAL_ROOMS_NORMALIZED = []
 
 
 def configure_sorting():
@@ -67,6 +70,12 @@ def configure_bathrooms():
 
     BATHROOM_ORDER = make_bathroom_order(bathrooms_input)
     MASTER_INDEX = BATHROOM_ORDER.index("MASTER") if "MASTER" in BATHROOM_ORDER else 0
+
+
+def configure_special_rooms():
+    global SPECIAL_ROOMS_NORMALIZED
+    # Store as uppercase for case-insensitive matching
+    SPECIAL_ROOMS_NORMALIZED = [r.upper() for r in special_rooms_input]
 
 
 # ============================
@@ -183,6 +192,17 @@ def build_unit_bathroom_map(photos):
 
 def is_unassigned_photo(bath_idx, phase_idx):
     return bath_idx == -1 and phase_idx == -1
+
+
+def get_special_room_match(tags_clean):
+    """Return the original-case special room name if any tag matches, else None."""
+    for tag in tags_clean:
+        tag_up = tag.upper()
+        for i, room in enumerate(SPECIAL_ROOMS_NORMALIZED):
+            if room == tag_up or room in tag_up:
+                # Return the user-supplied name (title-cased) for display
+                return special_rooms_input[i].title()
+    return None
 
 
 # ============================
@@ -347,6 +367,8 @@ def organize_photos(photos, unit_bath_map=None):
             return defaultdict(lambda: defaultdict(list))
 
     structure = make_structure()
+    # special_rooms_structure: { room_name: { phase: [photo_data, ...] } }
+    special_rooms_structure = defaultdict(lambda: defaultdict(list))
     skipped_no_url = 0
     skipped_no_uris = 0
 
@@ -380,6 +402,34 @@ def organize_photos(photos, unit_bath_map=None):
         return None
 
     for p in photos:
+        tags_clean = [t.strip().upper() for t in p.get("tag_names", [])]
+
+        # ── Special room check (highest priority) ──────────────────────────
+        if SPECIAL_ROOMS_NORMALIZED:
+            room_name = get_special_room_match(tags_clean)
+            if room_name:
+                phase_idx = next((i for i, n in enumerate(PHASE_ORDER) if n in tags_clean), -1)
+                phase_key = PHASE_ORDER[phase_idx] if 0 <= phase_idx < len(PHASE_ORDER) else "UNTAGGED"
+                photo_url = get_best_image_url(p)
+                coordinates = p.get("coordinates", {})
+                all_tags = p.get("tag_names", [])
+                photo_data = {
+                    "url": photo_url or "https://via.placeholder.com/200x180/cccccc/666666?text=No+Image",
+                    "captured_at": p.get("captured_at"),
+                    "latitude": coordinates.get("lat"),
+                    "longitude": coordinates.get("lon"),
+                    "has_image": photo_url is not None,
+                    "all_tags": all_tags,
+                    "tag_string": room_name,
+                    "extra_tags": "",
+                }
+                special_rooms_structure[room_name][phase_key].append(photo_data)
+                if not p.get("uris"):
+                    skipped_no_uris += 1
+                elif not photo_url:
+                    skipped_no_url += 1
+                continue  # skip normal routing
+
         sort_result = get_sort_key(p, unit_bath_map)
 
         if SORT_METHOD_KEY == "full":
@@ -444,7 +494,7 @@ def organize_photos(photos, unit_bath_map=None):
     print(f"[*] Skipped (no URIs): {skipped_no_uris}")
     print(f"[*] Skipped (no valid URL): {skipped_no_url}")
 
-    return structure
+    return structure, special_rooms_structure
 
 
 # ============================
@@ -677,6 +727,7 @@ function generatePDF() {
         multi_bath: params.get("multi_bath"),
         label_format: params.get("label_format"),
         bath_names: params.get("bath_names"),
+        special_rooms: params.get("special_rooms"),
     }),
     })
     .then(res => res.json())
@@ -868,7 +919,7 @@ def make_shared_css():
 # ============================
 # HTML GENERATORS (ALL MODES)
 # ============================
-def generate_html_unit_phase(structure):
+def generate_html_unit_phase(structure, special_rooms_structure=None):
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     title = PROJECT_NAME or PROJECT_ID
     total_units = len(structure)
@@ -909,12 +960,13 @@ def generate_html_unit_phase(structure):
             html += '</div>'
         html += '</div></div>'
 
+    html += generate_special_rooms_html(special_rooms_structure or {})
     html += f'</div></div>{LIGHTBOX_JS}{PDF_PROGRESS_JS}</body></html>'
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write(html)
 
 
-def generate_html_bldg_unit_phase(structure):
+def generate_html_bldg_unit_phase(structure, special_rooms_structure=None):
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     title = PROJECT_NAME or PROJECT_ID
     total_buildings = len(structure)
@@ -961,12 +1013,13 @@ def generate_html_bldg_unit_phase(structure):
             html += '</div></div>'
         html += '</div>'
 
+    html += generate_special_rooms_html(special_rooms_structure or {})
     html += f'</div></div>{LIGHTBOX_JS}{PDF_PROGRESS_JS}</body></html>'
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write(html)
 
 
-def generate_html_unit_bath_phase(structure):
+def generate_html_unit_bath_phase(structure, special_rooms_structure=None):
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     title = PROJECT_NAME or PROJECT_ID
     total_units = len(structure)
@@ -1011,12 +1064,13 @@ def generate_html_unit_bath_phase(structure):
             html += '</div></div>'
         html += '</div>'
 
+    html += generate_special_rooms_html(special_rooms_structure or {})
     html += f'</div></div>{LIGHTBOX_JS}{PDF_PROGRESS_JS}</body></html>'
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write(html)
 
 
-def generate_html_full_hierarchy(structure):
+def generate_html_full_hierarchy(structure, special_rooms_structure=None):
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     title = PROJECT_NAME or PROJECT_ID
     total_buildings = len(structure)
@@ -1068,6 +1122,7 @@ def generate_html_full_hierarchy(structure):
             html += '</div>'
         html += '</div>'
 
+    html += generate_special_rooms_html(special_rooms_structure or {})
     html += f'</div></div>{LIGHTBOX_JS}{PDF_PROGRESS_JS}</body></html>'
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write(html)
@@ -1082,6 +1137,37 @@ def determine_html_method(key):
         return generate_html_unit_bath_phase
     else:
         return generate_html_full_hierarchy
+
+
+def generate_special_rooms_html(special_rooms_structure):
+    """Returns HTML string for special room sections to be appended to any report mode."""
+    if not special_rooms_structure:
+        return ""
+
+    html = '<div class="building-section special-rooms-section">'
+    html += '<h2 class="building-title" style="border-left-color:#9b59b6;">🏛 Special Areas</h2>'
+
+    for room_name in sorted(special_rooms_structure):
+        phases_dict = special_rooms_structure[room_name]
+        total_room_photos = sum(len(v) for v in phases_dict.values())
+        html += f'<div class="unit-section"><div class="unit-header" style="background:#6c3483;">🏛 {room_name}</div>'
+        html += '<div class="unit-phases" style="padding:20px;">'
+        for phase in PHASE_ORDER:
+            photos = phases_dict.get(phase, [])
+            if phase == "UNTAGGED" and not photos:
+                continue
+            badge = "before" if phase == "BEFORE" else ("after" if phase == "AFTER" else "untagged")
+            label = phase if phase != "UNTAGGED" else "Untagged"
+            html += f'<div class="phase-section"><div class="phase-header"><h3 class="phase-title"><span class="phase-badge {badge}">{label}</span></h3><span class="phase-count">{len(photos)} photos</span></div>'
+            if photos:
+                html += '<div class="photo-grid">' + ''.join(make_photo_card_html(p) for p in photos) + '</div>'
+            else:
+                html += '<div class="no-photos">No photos</div>'
+            html += '</div>'
+        html += '</div></div>'
+
+    html += '</div>'
+    return html
 
 
 # ============================
@@ -1117,7 +1203,7 @@ def separate_extra_tags(all_tags, used_parts):
 # ============================
 # PDF DATA ENGINE (ALL MODES)
 # ============================
-def build_pdf_context(structure, photos):
+def build_pdf_context(structure, photos, special_rooms_structure=None):
     total_photos = len(photos)
     total_buildings = 0
     total_units = 0
@@ -1157,6 +1243,7 @@ def build_pdf_context(structure, photos):
         "total_bathrooms": total_bathrooms,
         "sort_mode": SORT_METHOD_KEY,
         "structured": structure,
+        "special_rooms_structured": special_rooms_structure or {},
     }
 
     print("\n========= REPORT METRICS =========")
@@ -1165,6 +1252,8 @@ def build_pdf_context(structure, photos):
     print(f"Units: {total_units}")
     print(f"Bathrooms: {total_bathrooms}")
     print(f"Photos: {total_photos}")
+    if special_rooms_structure:
+        print(f"Special rooms: {list(special_rooms_structure.keys())}")
     print("==================================\n")
 
     return context
@@ -1194,12 +1283,12 @@ def main():
     unit_bath_map = build_unit_bathroom_map(photos)
     photos.sort(key=lambda p: get_sort_key(p, unit_bath_map))
 
-    structured = organize_photos(photos, unit_bath_map)
-    pdf_context = build_pdf_context(structured, photos)
+    structured, special_rooms_structured = organize_photos(photos, unit_bath_map)
+    pdf_context = build_pdf_context(structured, photos, special_rooms_structured)
 
     print("[*] Generating HTML...")
     function_to_generate_html = determine_html_method(SORT_METHOD_KEY)
-    function_to_generate_html(structured)
+    function_to_generate_html(structured, special_rooms_structured)
 
     generate_pdf_report(pdf_context)
 

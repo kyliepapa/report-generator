@@ -349,6 +349,17 @@ def bath_divider(label):
         Paragraph(label, style_bath),
     ]
 
+def special_room_divider(label):
+    style_special = ParagraphStyle(
+        "SpecialRoomHdr",
+        fontSize=14, leading=18, spaceAfter=2, spaceBefore=5,
+        textColor=colors.HexColor("#6c3483"), fontName="Helvetica-Bold"
+    )
+    return [
+        HRFlowable(width="100%", thickness=2.5, color=colors.HexColor("#6c3483"), spaceAfter=3),
+        Paragraph(f"Special Area — {label}", style_special),
+    ]
+
 
 # ============================
 # MAIN GENERATOR
@@ -448,6 +459,13 @@ def generate_pdf_report(context):
         for unit in sorted(data):
             unit_hdr = unit_divider(f"Unit {unit if unit != 'UNASSIGNED' else 'Unassigned'}")
             elements += build_photo_section(data[unit], unit_hdr)
+
+    # ---- SPECIAL ROOMS ----
+    special_data = context.get("special_rooms_structured", {})
+    if special_data:
+        for room_name in sorted(special_data):
+            room_hdr = special_room_divider(room_name)
+            elements += build_photo_section(special_data[room_name], room_hdr)
 
     doc.build(elements, onFirstPage=hf, onLaterPages=hf)
     print(f"[OK] PDF saved: {save_path}")

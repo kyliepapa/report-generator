@@ -8,6 +8,88 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
+    <style>
+        .field-hint {
+            font-size: 11px;
+            color: var(--muted);
+            line-height: 1.5;
+            margin-top: -2px;
+        }
+
+        /* ── Tag Builder ── */
+        .tag-builder {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 7px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 8px 10px;
+            min-height: 42px;
+            cursor: text;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .tag-builder:focus-within {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(46,134,222,0.15);
+        }
+        .tag-input {
+            background: transparent;
+            border: none;
+            outline: none;
+            color: var(--text);
+            font-family: var(--font-main);
+            font-size: 13.5px;
+            flex: 1;
+            min-width: 140px;
+            padding: 2px 2px;
+        }
+        .tag-input::placeholder { color: #445566; }
+
+        /* Pills */
+        .tag-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            background: rgba(155, 89, 182, 0.18);
+            border: 1px solid rgba(155, 89, 182, 0.4);
+            color: #c39bd3;
+            font-size: 12px;
+            font-weight: 500;
+            padding: 3px 9px 3px 10px;
+            border-radius: 20px;
+            white-space: nowrap;
+            user-select: none;
+            transition: background 0.15s, border-color 0.15s;
+        }
+        .tag-pill:hover {
+            background: rgba(155, 89, 182, 0.28);
+            border-color: rgba(155, 89, 182, 0.65);
+        }
+        .tag-pill-x {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            font-size: 11px;
+            line-height: 1;
+            color: #a569bd;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.15s, background 0.15s, color 0.15s;
+            flex-shrink: 0;
+        }
+        .tag-pill:hover .tag-pill-x {
+            opacity: 1;
+        }
+        .tag-pill-x:hover {
+            background: rgba(155, 89, 182, 0.5);
+            color: #f0e0f8;
+        }
+    </style>
 </head>
 <body>
 
@@ -50,6 +132,21 @@
                     <input class="bath field-input" placeholder="e.g. Guest" />
                     <input class="bath field-input" placeholder="e.g. Hall" />
                     <input class="bath field-input" placeholder="e.g. En Suite" />
+                </div>
+            </div>
+
+            <div class="field-group">
+                <label class="field-label">Special rooms <span class="optional">(optional)</span></label>
+                <div class="field-hint">e.g. Lobby, Office, Clubhouse — photos tagged with these names will be sorted into their own sections.</div>
+                <div class="tag-builder" id="specialRoomsBuilder">
+                    <!-- Pills injected here by JS -->
+                    <input
+                        id="specialRoomInput"
+                        class="tag-input"
+                        placeholder="Type a room name, press Enter"
+                        autocomplete="off"
+                        spellcheck="false"
+                    />
                 </div>
             </div>
 
