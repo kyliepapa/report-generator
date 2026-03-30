@@ -55,7 +55,7 @@ def generate_stream():
 
             def heartbeat():
                 now = time.time()
-                if now - last_heartbeat[0] > 10:
+                if now - last_heartbeat[0] > 2:
                     last_heartbeat[0] = now
                     return "data: ⏳ still working...\n\n"
                 return None
@@ -84,10 +84,10 @@ def generate_stream():
                 if now - last_update[0] > 2:
                     yield f"data: 🏷 Tagging: {i+1}/{total} photos\n\n"
                     last_update[0] = now
-
-                hb = heartbeat()
-                if hb:
-                    yield hb
+                    last_heartbeat[0] = now  # reset heartbeat whenever we send a progress update
+                else:
+                    # Always send a keepalive — this is what prevents the 60s timeout
+                    yield f"data: ⏳ {i+1}/{total}\n\n"
 
                 time.sleep(0.05)
 
