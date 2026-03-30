@@ -3,4 +3,4 @@ services:
     name: aquamizer
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --worker-class gevent --workers 2 --timeout 300
+    startCommand: gunicorn app:app --worker-class sync --workers 1 --timeout 0

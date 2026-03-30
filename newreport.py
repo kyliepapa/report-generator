@@ -596,34 +596,54 @@ function generatePDF() {
     bar.style.width = "0%";
     status.textContent = "Starting...";
 
-    const evtSource = new EventSource(`/generate_pdf_stream?${params}`);
+    fetch('/start_pdf_job', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+        project_id: params.get("project_id"),
+        project_name: params.get("project_name"),
+        multi_bath: params.get("multi_bath"),
+        label_format: params.get("label_format"),
+        bath_names: params.get("bath_names"),
+    }),
+    })
+    .then(res => res.json())
+    .then(({ job_id }) => {
 
-    evtSource.onmessage = function(event) {
-        status.textContent = event.data;
-        let current = parseFloat(bar.style.width) || 0;
-        if (current < 90) bar.style.width = (current + 2) + "%";
-    };
+        const interval = setInterval(() => {
+            fetch(`/job_status/${job_id}`)
+                .then(res => res.json())
+                .then(data => {
 
-    evtSource.addEventListener("pdfready", function(event) {
-        const filename = event.data.trim();
-        btn.textContent = "Open PDF";
-        btn.disabled = false;
-        btn.onclick = () => window.open("/reports/" + filename, "_blank");
+                    if (data.status === "complete") {
+                        clearInterval(interval);
+
+                        bar.style.width = "100%";
+                        status.textContent = "✅ PDF ready!";
+
+                        btn.textContent = "Open PDF";
+                        btn.disabled = false;
+
+                        btn.onclick = () => {
+                            window.open(`/reports/${data.pdf_filename}`, "_blank");
+                        };
+                    }
+
+                    if (data.status === "error") {
+                        clearInterval(interval);
+
+                        status.textContent = "❌ Error generating PDF";
+                        btn.textContent = "Try Again";
+                        btn.disabled = false;
+                        btn.onclick = generatePDF;
+                    }
+
+                });
+        }, 2000); // poll every 2 seconds
+
     });
 
-    evtSource.addEventListener("complete", function() {
-        bar.style.width = "100%";
-        status.textContent = "✅ PDF ready!";
-        evtSource.close();
-    });
-
-    evtSource.addEventListener("error", function() {
-        status.textContent = "❌ Error generating PDF";
-        btn.textContent = "Try Again";
-        btn.disabled = false;
-        btn.onclick = generatePDF;
-        evtSource.close();
-    });
+    
 }
 </script>
 """

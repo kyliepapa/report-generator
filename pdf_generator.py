@@ -14,6 +14,14 @@ import os
 import requests
 from io import BytesIO
 
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+session = requests.Session()
+retries = Retry(total=3, backoff_factor=0.5)
+session.mount('http://', HTTPAdapter(max_retries=retries))
+session.mount('https://', HTTPAdapter(max_retries=retries))
+
 # ============================
 # PAGE GEOMETRY
 # ============================
@@ -68,7 +76,7 @@ HEADER_BG      = colors.HexColor("#1a2535")
 # ============================
 def fetch_image(url, max_w=PHOTO_W, max_h=IMG_H):
     try:
-        r = requests.get(url, timeout=14)
+        r = session.get(url, timeout=8)
         if r.status_code == 200:
             img = Image(BytesIO(r.content))
             iw, ih = img.imageWidth, img.imageHeight

@@ -1,3 +1,5 @@
+// This is script.js
+
 // ================================
 // STATE
 // ================================
@@ -19,7 +21,7 @@ document.querySelectorAll('.toggle').forEach(btn => {
 // ================================
 // TERMINAL HELPERS
 // ================================
-const terminal = document.getElementById('terminal');
+const terminal   = document.getElementById('terminal');
 const termStatus = document.getElementById('terminalStatus');
 
 function setStatus(state, label) {
@@ -32,7 +34,7 @@ function termLine(text) {
 
     if (text.startsWith('❌') || text.toLowerCase().includes('error')) {
         line.className = 'line-error';
-    } else if (text.startsWith('✅') || text.startsWith('🏷') && text.includes('complete')) {
+    } else if (text.startsWith('✅') || (text.startsWith('🏷') && text.includes('complete'))) {
         line.className = 'line-success';
     } else if (text.startsWith('📊') || text.startsWith('🔴') || text.startsWith('🟡')) {
         line.className = 'line-section';
@@ -50,6 +52,50 @@ function clearTerminal() {
 }
 
 // ================================
+// POLLING HELPER
+// Calls /job_status/:id every 2s, prints new log lines,
+// resolves when status is 'complete' or 'error'.
+// ================================
+function pollJob(jobId, onComplete, onError) {
+    let seenLines = 0;
+
+    const interval = setInterval(() => {
+        fetch(`/job_status/${jobId}`)
+            .then(r => {
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                return r.json();
+            })
+            .then(data => {
+                // Print any new log lines since last poll
+                const newLines = data.log.slice(seenLines);
+                newLines.forEach(termLine);
+                seenLines = data.log.length;
+
+                if (data.status === 'complete') {
+                    clearInterval(interval);
+                    onComplete(data);
+                } else if (data.status === 'error') {
+                    clearInterval(interval);
+                    onError(data);
+                }
+            })
+            .catch(err => {
+                // A single failed poll is just a network blip — keep trying
+                console.warn('Poll blip:', err);
+            });
+    }, 2000);
+}
+
+// ================================
+// RESET UI HELPERS
+// ================================
+function resetBtn() {
+    const btn = document.getElementById('generateBtn');
+    btn.disabled = false;
+    btn.querySelector('.btn-label').textContent = 'Generate Report';
+}
+
+// ================================
 // GENERATE BUTTON
 // ================================
 document.getElementById('generateBtn').addEventListener('click', () => {
@@ -57,21 +103,21 @@ document.getElementById('generateBtn').addEventListener('click', () => {
     const projectName = document.getElementById('projectName').value.trim();
     const baths = Array.from(document.querySelectorAll('.bath'))
         .map(b => b.value.trim())
-        .filter(b => b !== "");
+        .filter(b => b !== '');
 
     const errorDiv = document.getElementById('error');
-    errorDiv.textContent = "";
+    errorDiv.textContent = '';
 
     if (!projectId) {
-        errorDiv.textContent = "Please enter a Project ID.";
+        errorDiv.textContent = 'Please enter a Project ID.';
         return;
     }
     if (!selected.multi) {
-        errorDiv.textContent = "Please select whether units have multiple bathrooms.";
+        errorDiv.textContent = 'Please select whether units have multiple bathrooms.';
         return;
     }
     if (!selected.format) {
-        errorDiv.textContent = "Please select a unit label format.";
+        errorDiv.textContent = 'Please select a unit label format.';
         return;
     }
 
@@ -81,43 +127,57 @@ document.getElementById('generateBtn').addEventListener('click', () => {
     const generateBtn = document.getElementById('generateBtn');
     generateBtn.disabled = true;
     generateBtn.querySelector('.btn-label').textContent = 'Generating…';
-
     document.getElementById('reportActions').style.display = 'none';
 
-    const params = new URLSearchParams({
+    const payload = {
         project_id:   projectId,
         project_name: projectName || projectId,
         multi_bath:   selected.multi,
         label_format: selected.format,
-        bath_names:   baths.join(',')
-    });
-
-    const eventSource = new EventSource(`/generate_stream?${params}`);
-
-    eventSource.onmessage = function(event) {
-        termLine(event.data);
+        bath_names:   baths.join(','),
     };
 
-    eventSource.addEventListener("complete", function() {
-        eventSource.close();
-        setStatus('success', 'Done');
+    // POST to kick off the background job
+    fetch('/start_job', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(payload),
+    })
+    .then(r => {
+        if (r.status === 429) throw new Error('busy');
+        if (!r.ok)            throw new Error(`HTTP ${r.status}`);
+        return r.json();
+    })
+    .then(({ job_id }) => {
+        termLine('🔌 Job started, processing...');
 
-        generateBtn.disabled = false;
-        generateBtn.querySelector('.btn-label').textContent = 'Generate Report';
+        pollJob(
+            job_id,
+            // onComplete
+            () => {
+                setStatus('success', 'Done');
+                resetBtn();
 
-        // Show action bar with link to report
-        const actions = document.getElementById('reportActions');
-        const openBtn = document.getElementById('openReportBtn');
-        openBtn.onclick = () => window.open(`/report?${params}`, '_blank');
-        actions.style.display = 'flex';
-    });
-
-    eventSource.onerror = function() {
-        eventSource.close();
+                const actions = document.getElementById('reportActions');
+                const openBtn = document.getElementById('openReportBtn');
+                const urlParams = new URLSearchParams(payload);
+                openBtn.onclick = () => window.open(`/report?${urlParams}`, '_blank');
+                actions.style.display = 'flex';
+            },
+            // onError
+            () => {
+                setStatus('error', 'Error');
+                resetBtn();
+            }
+        );
+    })
+    .catch(err => {
+        if (err.message === 'busy') {
+            termLine('⏳ Another report is already running. Please wait and try again.');
+        } else {
+            termLine(`❌ Failed to start job: ${err}`);
+        }
         setStatus('error', 'Error');
-        termLine('❌ Connection error. Check the server.');
-
-        generateBtn.disabled = false;
-        generateBtn.querySelector('.btn-label').textContent = 'Generate Report';
-    };
+        resetBtn();
+    });
 });
