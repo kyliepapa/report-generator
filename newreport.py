@@ -70,20 +70,93 @@ def configure_bathrooms():
 
 
 # ============================
-# UNIT EXTRACTION
+# BUILDING / UNIT EXTRACTION & PARSING
 # ============================
-def extract_unit(tags_clean):
+def parse_bldg_unit(tags_clean):
+    global label_format
+
+    bldg = None
+    unit = None
+
+    # ============================
+    # 1. EXPLICIT TAGS (HIGHEST PRIORITY)
+    # ============================
     for t in tags_clean:
-        match = re.search(r'\bUNIT\s*([A-Z0-9]{1,4})\b', t)
-        if match:
-            val = match.group(1)
-            return val.zfill(3) if val.isdigit() else val
+        b_match = re.search(r'\b(?:BLDG|BUILDING)\s*([A-Z0-9]{1,4})\b', t, re.IGNORECASE)
+        if b_match:
+            val = b_match.group(1).upper()
+            bldg = val.zfill(2) if val.isdigit() else val
 
     for t in tags_clean:
-        if re.fullmatch(r'\d{1,4}', t):
-            return t.zfill(3)
+        u_match = re.search(r'\bUNIT\s*([A-Z0-9]{1,4})\b', t, re.IGNORECASE)
+        if u_match:
+            val = u_match.group(1).upper()
+            unit = val.zfill(3) if val.isdigit() else val
 
-    return "UNASSIGNED"
+    # If both found, we're done
+    if bldg and unit:
+        return bldg, unit
+
+    # ============================
+    # PREP TAG TYPES
+    # ============================
+    letters = [t for t in tags_clean if re.fullmatch(r'[A-Z]', t)]
+    numbers = [t for t in tags_clean if re.fullmatch(r'\d{1,4}', t)]
+
+    # Normalize numbers
+    numbers = [n.zfill(3) for n in numbers]
+
+    # ============================
+    # 2. FORMAT RULES
+    # ============================
+
+    # ---- CASE: "123" (no building) ----
+    if label_format == "123":
+        if unit:
+            return None, unit
+
+        if letters:
+            return None, letters[0]
+
+        if numbers:
+            return None, numbers[0]
+
+        return None, "UNASSIGNED"
+
+    # ---- CASE: "123 A" ----
+    elif label_format == "123 A":
+        if not unit and letters:
+            unit = letters[0]
+
+        if not bldg and numbers:
+            bldg = max(numbers)
+
+    # ---- CASE: "A 123" ----
+    elif label_format == "A 123":
+        if not bldg and letters:
+            bldg = letters[0]
+
+        if not unit and numbers:
+            unit = min(numbers)
+
+    # ============================
+    # 3. FALLBACK (NO LETTERS)
+    # ============================
+    if (label_format in ["123 A", "A 123"]) and not letters and len(numbers) >= 2:
+        sorted_nums = sorted(numbers)
+        unit = sorted_nums[0]
+        bldg = sorted_nums[-1]
+
+    # ============================
+    # FINAL CLEANUP
+    # ============================
+    if not unit:
+        unit = "UNASSIGNED"
+
+    if not bldg:
+        bldg = "00"
+
+    return bldg, unit
 
 
 def build_unit_bathroom_map(photos):
@@ -91,7 +164,7 @@ def build_unit_bathroom_map(photos):
 
     for p in photos:
         tags_clean = [t.strip().upper() for t in p.get("tag_names", [])]
-        unit = extract_unit(tags_clean)
+        bldg, unit = parse_bldg_unit(tags_clean)
         bath_idx = next(
             (i for i, b in enumerate(BATHROOM_ORDER)
              if any(b.upper() in tag for tag in tags_clean)),
@@ -117,7 +190,7 @@ def is_unassigned_photo(bath_idx, phase_idx):
 # ============================
 def get_sort_key_unit_phase(photo, unit_bath_map=None):
     tags_clean = [t.strip().upper() for t in photo.get("tag_names", [])]
-    unit = extract_unit(tags_clean)
+    bldg, unit = parse_bldg_unit(tags_clean)
     phase_idx = next((i for i, n in enumerate(PHASE_ORDER) if n in tags_clean), -1)
     phase_lbl = next((n for n in PHASE_ORDER if n in tags_clean), -1)
     return (unit, phase_idx, phase_lbl)
@@ -125,20 +198,19 @@ def get_sort_key_unit_phase(photo, unit_bath_map=None):
 
 def get_sort_key_bldg_unit_phase(photo, unit_bath_map=None):
     tags_clean = [t.strip().upper() for t in photo.get("tag_names", [])]
-    bldg = "00"
-    unit_val = extract_unit(tags_clean)
-    for t in tags_clean:
-        b_match = re.search(r'\b(?:BLDG|BUILDING)\s*(\d+)\b', t)
-        if b_match:
-            bldg = b_match.group(1).zfill(2)
-            break
+    bldg, unit_val = parse_bldg_unit(tags_clean)
+    # for t in tags_clean:
+    #     b_match = re.search(r'\b(?:BLDG|BUILDING)\s*(\d+)\b', t)
+    #     if b_match:
+    #         bldg = b_match.group(1).zfill(2)
+    #         break
     phase_idx = next((i for i, n in enumerate(PHASE_ORDER) if n in tags_clean), -1)
     return (bldg, unit_val, phase_idx)
 
 
 def get_sort_key_unit_bath_phase(photo, unit_bath_map=None):
     tags_clean = [t.strip().upper() for t in photo.get("tag_names", [])]
-    unit_val = extract_unit(tags_clean)
+    bldg, unit_val = parse_bldg_unit(tags_clean)
     bath_idx = next(
         (i for i, b in enumerate(BATHROOM_ORDER)
          if any(b.upper() in tag for tag in tags_clean)),
@@ -155,13 +227,13 @@ def get_sort_key_unit_bath_phase(photo, unit_bath_map=None):
 
 def get_sort_key_full(photo, unit_bath_map=None):
     tags_clean = [t.strip().upper() for t in photo.get("tag_names", [])]
-    unit_val = extract_unit(tags_clean)
-    bldg = "00"
-    for t in tags_clean:
-        b_match = re.search(r'\b(?:BLDG|BUILDING)\s*(\d+)\b', t)
-        if b_match:
-            bldg = b_match.group(1).zfill(2)
-            break
+    bldg, unit_val = parse_bldg_unit(tags_clean)
+    # bldg = "00"
+    # for t in tags_clean:
+    #     b_match = re.search(r'\b(?:BLDG|BUILDING)\s*(\d+)\b', t)
+    #     if b_match:
+    #         bldg = b_match.group(1).zfill(2)
+    #         break
     bath_idx = next(
         (i for i, b in enumerate(BATHROOM_ORDER)
          if any(b.upper() in tag for tag in tags_clean)),
