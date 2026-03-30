@@ -1,138 +1,65 @@
-from flask import Flask, render_template, request, send_from_directory, url_for, Response, jsonify, stream_with_context
+# This is app.py
+
+from flask import Flask, render_template, request, send_from_directory, Response, jsonify
 import os
 import time
 import threading
-
-job_lock = threading.Lock()
+import uuid
 
 from newreport import (
-    fetch_photos, fetch_tags, build_unit_bathroom_map, organize_photos,
-    build_pdf_context, get_sort_key, set_inputs, configure_sorting,
-    configure_bathrooms, analyze_missing_photos, determine_html_method,
+    fetch_photos,
+    fetch_tags,
+    build_unit_bathroom_map,
+    organize_photos,
+    build_pdf_context,
+    get_sort_key,
+    set_inputs,
+    configure_sorting,
+    configure_bathrooms,
+    analyze_missing_photos,
+    determine_html_method,
 )
 from pdf_generator import generate_pdf_report
 
 app = Flask(__name__)
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-STATIC_DIR = os.path.join(BASE_DIR, 'static')
+BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
+STATIC_DIR  = os.path.join(BASE_DIR, 'static')
 REPORTS_DIR = os.path.join(STATIC_DIR, 'reports')
 os.makedirs(REPORTS_DIR, exist_ok=True)
 
+# ─────────────────────────────────────────
+# In-memory job store
+# { job_id: { status, log, pdf_filename } }
+# ─────────────────────────────────────────
+jobs = {}
+jobs_lock = threading.Lock()          # guards concurrent writes to `jobs`
+work_lock = threading.Lock()          # prevents two heavy jobs running at once
 
-def sse_response(generator_func):
-    """Wrap a generator in a properly-headered SSE Response."""
-    resp = Response(stream_with_context(generator_func()), mimetype='text/event-stream')
-    resp.headers['Cache-Control'] = 'no-cache'
-    resp.headers['X-Accel-Buffering'] = 'no'       # disables Nginx buffering
-    resp.headers['Access-Control-Allow-Origin'] = '*'
-    return resp
 
+def _new_job():
+    return {"status": "running", "log": [], "pdf_filename": None}
+
+
+def _log(job_id, msg):
+    with jobs_lock:
+        jobs[job_id]["log"].append(msg)
+
+
+def _finish(job_id, status, pdf_filename=None):
+    with jobs_lock:
+        jobs[job_id]["status"] = status
+        if pdf_filename:
+            jobs[job_id]["pdf_filename"] = pdf_filename
+
+
+# ─────────────────────────────────────────
+# ROUTES
+# ─────────────────────────────────────────
 
 @app.route('/')
 def home():
     return render_template('index.html')
-
-
-@app.route('/generate_stream')
-def generate_stream():
-    if not job_lock.acquire(blocking=False):
-        def _busy():
-            yield "data: ⏳ Another report is currently being generated. Please wait.\n\n"
-        return sse_response(_busy)
-
-    project_id   = request.args.get('project_id')
-    project_name = request.args.get('project_name', '').strip() or project_id
-    multi_bath   = request.args.get('multi_bath')
-    label_format = request.args.get('label_format')
-    bath_names   = request.args.get('bath_names', '').split(',')
-
-    def generate():
-        try:
-            yield "data: 🔌 Connected...\n\n"
-
-            last_heartbeat = [time.time()]  # use list so inner func can mutate it
-
-            def heartbeat():
-                now = time.time()
-                if now - last_heartbeat[0] > 2:
-                    last_heartbeat[0] = now
-                    return "data: ⏳ still working...\n\n"
-                return None
-
-            yield "data: ⚙️ Configuring inputs...\n\n"
-            set_inputs(project_id, multi_bath, label_format, bath_names, project_name)
-            configure_sorting()
-            configure_bathrooms()
-
-            yield "data: 📥 Fetching photos...\n\n"
-            photos = fetch_photos()
-            yield f"data: ✅ {len(photos)} photos fetched\n\n"
-
-            yield "data: 🏷 Tagging photos...\n\n"
-            total = len(photos)
-            last_update = [time.time()]
-
-            for i, photo in enumerate(photos):
-                try:
-                    photo["tag_names"] = fetch_tags(photo["id"])
-                except Exception:
-                    photo["tag_names"] = []
-                    yield f"data: ⚠️ Failed to fetch tags for photo {photo['id']}\n\n"
-
-                now = time.time()
-                if now - last_update[0] > 2:
-                    yield f"data: 🏷 Tagging: {i+1}/{total} photos\n\n"
-                    last_update[0] = now
-                    last_heartbeat[0] = now  # reset heartbeat whenever we send a progress update
-                else:
-                    # Always send a keepalive — this is what prevents the 60s timeout
-                    yield f"data: ⏳ {i+1}/{total}\n\n"
-
-                time.sleep(0.05)
-
-            yield f"data: 🏷 Tagging complete ({total}/{total})\n\n"
-
-            yield "data: 📦 Building unit map...\n\n"
-            unit_bath_map = build_unit_bathroom_map(photos)
-
-            yield "data: 🔄 Sorting photos...\n\n"
-            photos.sort(key=lambda p: get_sort_key(p, unit_bath_map))
-
-            yield "data: 🧩 Structuring data...\n\n"
-            structured = organize_photos(photos, unit_bath_map)
-
-            yield "data: 🔍 Analyzing missing photos...\n\n"
-            missing = analyze_missing_photos(structured)
-
-            missing_before = missing.get("BEFORE", [])
-            missing_after  = missing.get("AFTER", [])
-            yield f"data: 📊 Missing BEFORE: {len(missing_before)}\n\n"
-            yield f"data: 📊 Missing AFTER: {len(missing_after)}\n\n"
-
-            for loc in missing_before:
-                yield f"data: 🔴 {loc}\n\n"
-            for loc in missing_after:
-                yield f"data: 🟡 {loc}\n\n"
-
-            yield "data: 🏗 Generating HTML report...\n\n"
-            from newreport import SORT_METHOD_KEY as SMK
-            html_func = determine_html_method(SMK)
-            html_func(structured)
-
-            yield "data: ✅ HTML report ready!\n\n"
-            yield "event: complete\ndata: success\n\n"
-
-        except Exception as e:
-            import traceback
-            yield f"data: ❌ ERROR: {str(e)}\n\n"
-            yield f"data: {traceback.format_exc()}\n\n"
-            yield "event: error\ndata: failed\n\n"
-
-        finally:
-            job_lock.release()
-
-    return sse_response(generate)
 
 
 @app.route('/report')
@@ -145,67 +72,166 @@ def download_report(filename):
     return send_from_directory(REPORTS_DIR, filename)
 
 
-@app.route("/generate_pdf_stream")
-def generate_pdf_stream():
-    if not job_lock.acquire(blocking=False):
-        def _busy():
-            yield "data: ⏳ Another report is currently being generated. Please wait.\n\n"
-        return sse_response(_busy)
+# ── Start a report job ───────────────────
+@app.route('/start_job', methods=['POST'])
+def start_job():
+    if not work_lock.acquire(blocking=False):
+        return jsonify({"error": "busy"}), 429
 
-    project_id   = request.args.get("project_id")
-    project_name = request.args.get("project_name", "").strip() or project_id
-    multi        = request.args.get("multi_bath")
-    label_format = request.args.get("label_format")
-    baths        = request.args.get("bath_names", "").split(",")
+    data         = request.json
+    job_id       = str(uuid.uuid4())
+    project_id   = data.get('project_id')
+    project_name = data.get('project_name') or project_id
+    multi_bath   = data.get('multi_bath')
+    label_format = data.get('label_format')
+    bath_names   = data.get('bath_names', '').split(',')
 
-    def generate():
+    with jobs_lock:
+        jobs[job_id] = _new_job()
+
+    def run():
         try:
-            yield "data: 📄 Starting PDF generation...\n\n"
-
-            set_inputs(project_id, multi, label_format, baths, project_name)
+            _log(job_id, "⚙️ Configuring inputs...")
+            set_inputs(project_id, multi_bath, label_format, bath_names, project_name)
             configure_sorting()
             configure_bathrooms()
 
-            yield "data: 📥 Fetching photos...\n\n"
+            _log(job_id, "📥 Fetching photos...")
             photos = fetch_photos()
-            total = len(photos)
-            yield f"data: ✅ {total} photos fetched\n\n"
+            _log(job_id, f"✅ {len(photos)} photos fetched")
 
-            yield "data: 🏷 Fetching tags...\n\n"
+            total = len(photos)
+            _log(job_id, f"🏷 Tagging {total} photos...")
             for i, photo in enumerate(photos):
                 try:
                     photo["tag_names"] = fetch_tags(photo["id"])
                 except Exception:
                     photo["tag_names"] = []
-                if i % 5 == 0 and i > 0:
-                    yield f"data: 🏷 Progress: {i}/{total}\n\n"
+                    _log(job_id, f"⚠️ Could not fetch tags for photo {photo['id']}")
 
-            yield f"data: 🏷 Tagging complete ({total}/{total})\n\n"
+                if (i + 1) % 10 == 0 or (i + 1) == total:
+                    _log(job_id, f"🏷 Tagging: {i+1}/{total}")
 
-            yield "data: 🧩 Organizing photos...\n\n"
+                time.sleep(0.05)
+
+            _log(job_id, "📦 Building unit map...")
+            unit_bath_map = build_unit_bathroom_map(photos)
+
+            _log(job_id, "🔄 Sorting photos...")
+            photos.sort(key=lambda p: get_sort_key(p, unit_bath_map))
+
+            _log(job_id, "🧩 Structuring data...")
+            structured = organize_photos(photos, unit_bath_map)
+
+            _log(job_id, "🔍 Analyzing missing photos...")
+            missing = analyze_missing_photos(structured)
+            missing_before = missing.get("BEFORE", [])
+            missing_after  = missing.get("AFTER",  [])
+            _log(job_id, f"📊 Missing BEFORE: {len(missing_before)}")
+            _log(job_id, f"📊 Missing AFTER: {len(missing_after)}")
+            for loc in missing_before:
+                _log(job_id, f"🔴 {loc}")
+            for loc in missing_after:
+                _log(job_id, f"🟡 {loc}")
+
+            _log(job_id, "🏗 Generating HTML report...")
+            from newreport import SORT_METHOD_KEY as SMK
+            html_func = determine_html_method(SMK)
+            html_func(structured)
+
+            _log(job_id, "✅ HTML report ready!")
+            _finish(job_id, "complete")
+
+        except Exception as e:
+            import traceback
+            _log(job_id, f"❌ ERROR: {e}")
+            _log(job_id, traceback.format_exc())
+            _finish(job_id, "error")
+
+        finally:
+            work_lock.release()
+
+    threading.Thread(target=run, daemon=True).start()
+    return jsonify({"job_id": job_id})
+
+
+# ── Poll job status ──────────────────────
+@app.route('/job_status/<job_id>')
+def job_status(job_id):
+    with jobs_lock:
+        job = jobs.get(job_id)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    return jsonify({
+        "status":       job["status"],
+        "log":          job["log"],
+        "pdf_filename": job.get("pdf_filename"),
+    })
+
+
+# ── Start a PDF job ──────────────────────
+@app.route('/start_pdf_job', methods=['POST'])
+def start_pdf_job():
+    if not work_lock.acquire(blocking=False):
+        return jsonify({"error": "busy"}), 429
+
+    data         = request.json
+    job_id       = str(uuid.uuid4())
+    project_id   = data.get('project_id')
+    project_name = data.get('project_name') or project_id
+    multi_bath   = data.get('multi_bath')
+    label_format = data.get('label_format')
+    bath_names   = data.get('bath_names', '').split(',')
+
+    with jobs_lock:
+        jobs[job_id] = _new_job()
+
+    def run():
+        try:
+            _log(job_id, "📄 Starting PDF generation...")
+            set_inputs(project_id, multi_bath, label_format, bath_names, project_name)
+            configure_sorting()
+            configure_bathrooms()
+
+            _log(job_id, "📥 Fetching photos...")
+            photos = fetch_photos()
+            total = len(photos)
+            _log(job_id, f"✅ {total} photos fetched")
+
+            _log(job_id, f"🏷 Tagging {total} photos...")
+            for i, photo in enumerate(photos):
+                try:
+                    photo["tag_names"] = fetch_tags(photo["id"])
+                except Exception:
+                    photo["tag_names"] = []
+                if (i + 1) % 10 == 0 or (i + 1) == total:
+                    _log(job_id, f"🏷 Tagging: {i+1}/{total}")
+                time.sleep(0.05)
+
+            _log(job_id, "🧩 Organizing photos...")
             unit_bath_map = build_unit_bathroom_map(photos)
             photos.sort(key=lambda p: get_sort_key(p, unit_bath_map))
             structured = organize_photos(photos, unit_bath_map)
 
-            yield "data: 🏗 Building PDF...\n\n"
+            _log(job_id, "🏗 Building PDF...")
             context = build_pdf_context(structured, photos)
             context["structured"] = structured
             filename = generate_pdf_report(context)
 
-            yield "data: ✅ PDF ready!\n\n"
-            yield f"event: pdfready\ndata: {filename}\n\n"
-            yield "event: complete\ndata: success\n\n"
+            _log(job_id, "✅ PDF ready!")
+            _finish(job_id, "complete", pdf_filename=filename)
 
         except Exception as e:
             import traceback
-            yield f"data: ❌ ERROR: {str(e)}\n\n"
-            yield f"data: {traceback.format_exc()}\n\n"
-            yield "event: error\ndata: failed\n\n"
+            _log(job_id, f"❌ ERROR: {e}")
+            _log(job_id, traceback.format_exc())
+            _finish(job_id, "error")
 
         finally:
-            job_lock.release()
+            work_lock.release()
 
-    return sse_response(generate)
+    threading.Thread(target=run, daemon=True).start()
+    return jsonify({"job_id": job_id})
 
 
 if __name__ == '__main__':
