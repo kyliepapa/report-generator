@@ -1,3 +1,5 @@
+#This is newreport.py
+
 import re
 import os
 import requests
@@ -598,22 +600,20 @@ function generatePDF() {
 
     evtSource.onmessage = function(event) {
         status.textContent = event.data;
-
         let current = parseFloat(bar.style.width) || 0;
-        if (current < 90) {
-            bar.style.width = (current + 2) + "%";
-        }
+        if (current < 90) bar.style.width = (current + 2) + "%";
     };
+
+    evtSource.addEventListener("pdfready", function(event) {
+        const filename = event.data.trim();
+        btn.textContent = "Open PDF";
+        btn.disabled = false;
+        btn.onclick = () => window.open("/reports/" + filename, "_blank");
+    });
 
     evtSource.addEventListener("complete", function() {
         bar.style.width = "100%";
         status.textContent = "✅ PDF ready!";
-
-        btn.textContent = "Open PDF";
-        btn.disabled = false;
-
-        btn.onclick = () => window.open("/report");
-
         evtSource.close();
     });
 
@@ -622,7 +622,6 @@ function generatePDF() {
         btn.textContent = "Try Again";
         btn.disabled = false;
         btn.onclick = generatePDF;
-
         evtSource.close();
     });
 }

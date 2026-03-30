@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: aquamizer
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --worker-class gevent --workers 2 --timeout 300
