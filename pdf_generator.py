@@ -74,11 +74,30 @@ HEADER_BG      = colors.HexColor("#1a2535")
 # ============================
 # IMAGE FETCHER
 # ============================
+from PIL import Image as PILImage
+
+from PIL import Image as PILImage
+
 def fetch_image(url, max_w=PHOTO_W, max_h=IMG_H):
     try:
         r = session.get(url, timeout=8)
         if r.status_code == 200:
-            img = Image(BytesIO(r.content))
+            pil_img = PILImage.open(BytesIO(r.content))
+
+            if pil_img.mode in ("RGBA", "P"):
+                pil_img = pil_img.convert("RGB")
+
+            # Resize for compression (pixel space)
+            TARGET_PX = 1200
+            pil_img.thumbnail((TARGET_PX, TARGET_PX))
+
+            buffer = BytesIO()
+            pil_img.save(buffer, format="JPEG", quality=80, optimize=True)
+            buffer.seek(0)
+
+            img = Image(buffer)
+
+            # ✅ CRITICAL: re-apply layout scaling (point space)
             iw, ih = img.imageWidth, img.imageHeight
             if iw and ih:
                 ratio = min(max_w / iw, max_h / ih)
@@ -86,9 +105,12 @@ def fetch_image(url, max_w=PHOTO_W, max_h=IMG_H):
                 img.drawHeight = ih * ratio
             else:
                 img.drawWidth, img.drawHeight = max_w, max_h
+
             return img
+
     except Exception as e:
         print(f"[IMG FETCH ERROR] {e}")
+
     return None
 
 
