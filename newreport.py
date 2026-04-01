@@ -74,7 +74,6 @@ def configure_bathrooms():
 
 def configure_special_rooms():
     global SPECIAL_ROOMS_NORMALIZED
-    # Store as uppercase for case-insensitive matching
     SPECIAL_ROOMS_NORMALIZED = [r.upper() for r in special_rooms_input]
 
 
@@ -87,9 +86,6 @@ def parse_bldg_unit(tags_clean):
     bldg = None
     unit = None
 
-    # ============================
-    # 1. EXPLICIT TAGS (HIGHEST PRIORITY)
-    # ============================
     for t in tags_clean:
         b_match = re.search(r'\b(?:BLDG|BUILDING)\s*([A-Z0-9]{1,4})\b', t, re.IGNORECASE)
         if b_match:
@@ -102,66 +98,41 @@ def parse_bldg_unit(tags_clean):
             val = u_match.group(1).upper()
             unit = val.zfill(3) if val.isdigit() else val
 
-    # If both found, we're done
     if bldg and unit:
         return bldg, unit
 
-    # ============================
-    # PREP TAG TYPES
-    # ============================
     letters = [t for t in tags_clean if re.fullmatch(r'[A-Z]', t)]
     numbers = [t for t in tags_clean if re.fullmatch(r'\d{1,4}', t)]
-
-    # Normalize numbers
     numbers = [n.zfill(3) for n in numbers]
 
-    # ============================
-    # 2. FORMAT RULES
-    # ============================
-
-    # ---- CASE: "123" (no building) ----
     if label_format == "123":
         if unit:
             return None, unit
-
         if letters:
             return None, letters[0]
-
         if numbers:
             return None, numbers[0]
-
         return None, "UNASSIGNED"
 
-    # ---- CASE: "123 A" ----
     elif label_format == "123 A":
         if not unit and letters:
             unit = letters[0]
-
         if not bldg and numbers:
             bldg = max(numbers)
 
-    # ---- CASE: "A 123" ----
     elif label_format == "A 123":
         if not bldg and letters:
             bldg = letters[0]
-
         if not unit and numbers:
             unit = min(numbers)
 
-    # ============================
-    # 3. FALLBACK (NO LETTERS)
-    # ============================
     if (label_format in ["123 A", "A 123"]) and not letters and len(numbers) >= 2:
         sorted_nums = sorted(numbers)
         unit = sorted_nums[0]
         bldg = sorted_nums[-1]
 
-    # ============================
-    # FINAL CLEANUP
-    # ============================
     if not unit:
         unit = "UNASSIGNED"
-
     if not bldg:
         bldg = "00"
 
@@ -195,12 +166,10 @@ def is_unassigned_photo(bath_idx, phase_idx):
 
 
 def get_special_room_match(tags_clean):
-    """Return the original-case special room name if any tag matches, else None."""
     for tag in tags_clean:
         tag_up = tag.upper()
         for i, room in enumerate(SPECIAL_ROOMS_NORMALIZED):
             if room == tag_up or room in tag_up:
-                # Return the user-supplied name (title-cased) for display
                 return special_rooms_input[i].title()
     return None
 
@@ -219,11 +188,6 @@ def get_sort_key_unit_phase(photo, unit_bath_map=None):
 def get_sort_key_bldg_unit_phase(photo, unit_bath_map=None):
     tags_clean = [t.strip().upper() for t in photo.get("tag_names", [])]
     bldg, unit_val = parse_bldg_unit(tags_clean)
-    # for t in tags_clean:
-    #     b_match = re.search(r'\b(?:BLDG|BUILDING)\s*(\d+)\b', t)
-    #     if b_match:
-    #         bldg = b_match.group(1).zfill(2)
-    #         break
     phase_idx = next((i for i, n in enumerate(PHASE_ORDER) if n in tags_clean), -1)
     return (bldg, unit_val, phase_idx)
 
@@ -248,12 +212,6 @@ def get_sort_key_unit_bath_phase(photo, unit_bath_map=None):
 def get_sort_key_full(photo, unit_bath_map=None):
     tags_clean = [t.strip().upper() for t in photo.get("tag_names", [])]
     bldg, unit_val = parse_bldg_unit(tags_clean)
-    # bldg = "00"
-    # for t in tags_clean:
-    #     b_match = re.search(r'\b(?:BLDG|BUILDING)\s*(\d+)\b', t)
-    #     if b_match:
-    #         bldg = b_match.group(1).zfill(2)
-    #         break
     bath_idx = next(
         (i for i, b in enumerate(BATHROOM_ORDER)
          if any(b.upper() in tag for tag in tags_clean)),
@@ -318,17 +276,7 @@ def fetch_photos():
 
     return all_photos
 
-# Pre-timeout & retries version
-# def fetch_tags(photo_id):
-#     url = f"https://api.companycam.com/v2/photos/{photo_id}/tags"
-#     headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
-#     r = requests.get(url, headers=headers)
 
-#     if r.status_code == 200:
-#         return [t["display_value"] for t in r.json()]
-#     return []
-
-# Post timeout & retries version
 def fetch_tags(photo_id, retries=3):
     url = f"https://api.companycam.com/v2/photos/{photo_id}/tags"
     headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
@@ -345,7 +293,6 @@ def fetch_tags(photo_id, retries=3):
         except Exception as e:
             print(f"[ERROR] Attempt {attempt+1} failed for {photo_id}: {e}")
 
-        # wait before retrying
         time.sleep(1)
 
     print(f"[FAIL] Could not fetch tags for {photo_id}")
@@ -367,7 +314,6 @@ def organize_photos(photos, unit_bath_map=None):
             return defaultdict(lambda: defaultdict(list))
 
     structure = make_structure()
-    # special_rooms_structure: { room_name: { phase: [photo_data, ...] } }
     special_rooms_structure = defaultdict(lambda: defaultdict(list))
     skipped_no_url = 0
     skipped_no_uris = 0
@@ -404,7 +350,6 @@ def organize_photos(photos, unit_bath_map=None):
     for p in photos:
         tags_clean = [t.strip().upper() for t in p.get("tag_names", [])]
 
-        # ── Special room check (highest priority) ──────────────────────────
         if SPECIAL_ROOMS_NORMALIZED:
             room_name = get_special_room_match(tags_clean)
             if room_name:
@@ -428,7 +373,7 @@ def organize_photos(photos, unit_bath_map=None):
                     skipped_no_uris += 1
                 elif not photo_url:
                     skipped_no_url += 1
-                continue  # skip normal routing
+                continue
 
         sort_result = get_sort_key(p, unit_bath_map)
 
@@ -501,12 +446,10 @@ def organize_photos(photos, unit_bath_map=None):
 # MISSING PHOTO ANALYSIS
 # ============================
 def _other_bath_is_active(phases_dict):
-    """OTHER bathroom only counts if it has at least one BEFORE or AFTER photo."""
     return bool(phases_dict.get("BEFORE") or phases_dict.get("AFTER"))
 
 
 def analyze_missing_photos(structure):
-    """Returns summary counts and a detailed list of missing before/after photos."""
     missing = {"BEFORE": [], "AFTER": []}
 
     def check(label, phases_dict, is_other=False):
@@ -619,6 +562,9 @@ LIGHTBOX_HTML = """
 LIGHTBOX_JS = """
 <script>
 function openLightbox(url, tags, timestamp, geoLabel, geoUrl) {
+    // Don't open lightbox while dragging
+    if (window._dragActive) return;
+
     document.getElementById('lightbox-img').src = url;
     document.getElementById('lightbox-dl').href = url;
     document.getElementById('lightbox-ts').textContent = timestamp || '—';
@@ -656,61 +602,394 @@ document.addEventListener('keydown', function(e) {
 </script>
 """
 
-# PDF_PROGRESS_JS = """
-# <script>
-# function generatePDF() {
-#     const params = new URLSearchParams(window.location.search);
-#     const btn = document.getElementById('pdfBtn');
-#     const bar = document.getElementById('pdfProgressBar');
-#     const barWrap = document.getElementById('pdfProgressWrap');
-#     const status = document.getElementById('pdfStatus');
+# ── Drag-and-Drop CSS ──────────────────────────────────────────────────────────
+DRAG_DROP_CSS = """
+    /* ── EDIT MODE TOOLBAR ── */
+    #dnd-toolbar {
+        position: sticky; top: 0; z-index: 900;
+        background: #1a2535;
+        display: flex; align-items: center; gap: 12px;
+        padding: 10px 20px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.18);
+        flex-wrap: wrap;
+    }
+    #dnd-toolbar .toolbar-label {
+        font-size: 12px; font-weight: 700; text-transform: uppercase;
+        letter-spacing: 0.8px; color: #8899aa; flex-shrink: 0;
+    }
+    #edit-mode-btn {
+        padding: 7px 18px; border-radius: 20px; border: 2px solid #2e86de;
+        background: transparent; color: #2e86de; font-size: 13px; font-weight: 700;
+        cursor: pointer; transition: all 0.2s; white-space: nowrap;
+    }
+    #edit-mode-btn.active {
+        background: #2e86de; color: white;
+        box-shadow: 0 0 16px rgba(46,134,222,0.35);
+    }
+    #edit-mode-btn:hover { opacity: 0.85; }
+    #undo-btn, #reset-btn {
+        padding: 7px 14px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.12);
+        background: rgba(255,255,255,0.06); color: #cdd6e0; font-size: 12px;
+        font-weight: 600; cursor: pointer; transition: all 0.18s; white-space: nowrap;
+    }
+    #undo-btn:hover, #reset-btn:hover {
+        background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.25);
+    }
+    #undo-btn:disabled, #reset-btn:disabled {
+        opacity: 0.3; cursor: not-allowed;
+    }
+    #edit-count-badge {
+        background: #e67e22; color: white; font-size: 11px; font-weight: 700;
+        padding: 3px 9px; border-radius: 20px; display: none;
+        animation: pop 0.2s ease;
+    }
+    @keyframes pop { 0%{transform:scale(0.7)} 60%{transform:scale(1.15)} 100%{transform:scale(1)} }
+    #edit-mode-hint {
+        font-size: 11.5px; color: #8899aa; font-style: italic; margin-left: auto;
+    }
 
-#     btn.disabled = true;
-#     btn.textContent = 'Generating...';
-#     barWrap.style.display = 'block';
-#     status.textContent = 'Starting PDF generation...';
+    /* ── DRAG-AND-DROP STATES ── */
 
-#     let progress = 0;
-#     const interval = setInterval(() => {
-#         progress = Math.min(progress + Math.random() * 8, 88);
-#         bar.style.width = progress + '%';
-#     }, 600);
+    /* Card becomes draggable in edit mode */
+    body.edit-mode .photo-card {
+        cursor: grab;
+        position: relative;
+    }
+    body.edit-mode .photo-card::before {
+        content: '⠿';
+        position: absolute; top: 5px; left: 5px; z-index: 10;
+        color: white; font-size: 16px; line-height: 1;
+        background: rgba(0,0,0,0.45);
+        border-radius: 4px; padding: 2px 4px;
+        pointer-events: none;
+        opacity: 0; transition: opacity 0.15s;
+    }
+    body.edit-mode .photo-card:hover::before { opacity: 1; }
+    body.edit-mode .photo-card img { cursor: grab; }
+    body.edit-mode .photo-card.dragging {
+        opacity: 0.35; transform: scale(0.97);
+        box-shadow: none; cursor: grabbing;
+    }
 
-#     fetch(`/generate_pdf?${params}`)
-#         .then(res => res.json())
-#         .then(data => {
-#             clearInterval(interval);
-#             bar.style.width = '100%';
-#             if (data.status === 'success') {
-#                 status.textContent = '✅ PDF ready!';
-#                 btn.textContent = 'Open PDF';
-#                 btn.disabled = false;
-#                 btn.onclick = () => window.open(`/reports/${data.filename}`);
-#             } else {
-#                 status.textContent = '❌ Error: ' + data.message;
-#                 btn.textContent = 'Try Again';
-#                 btn.disabled = false;
-#                 btn.onclick = generatePDF;
-#             }
-#         })
-#         .catch(err => {
-#             clearInterval(interval);
-#             status.textContent = '❌ Server error';
-#             btn.textContent = 'Try Again';
-#             btn.disabled = false;
-#             btn.onclick = generatePDF;
-#         });
-# }
-# </script>
-# """
+    /* Drop zone highlight */
+    body.edit-mode .photo-grid {
+        min-height: 60px;
+        border-radius: 8px;
+        transition: background 0.15s, box-shadow 0.15s;
+    }
+    body.edit-mode .photo-grid.drag-over {
+        background: rgba(46,134,222,0.08);
+        box-shadow: inset 0 0 0 2px #2e86de;
+    }
+
+    /* Drop insert line (shows between cards) */
+    .drop-indicator {
+        width: 3px; height: 170px;
+        background: #2e86de;
+        border-radius: 3px;
+        flex-shrink: 0;
+        box-shadow: 0 0 8px rgba(46,134,222,0.7);
+        animation: blink-indicator 0.8s ease infinite alternate;
+    }
+    @keyframes blink-indicator {
+        from { opacity: 0.6; } to { opacity: 1; }
+    }
+
+    /* "Moved" flash on a card that just landed */
+    .photo-card.just-dropped {
+        animation: drop-flash 0.55s ease forwards;
+    }
+    @keyframes drop-flash {
+        0%  { box-shadow: 0 0 0 3px #2e86de; background: #e8f4ff; }
+        100%{ box-shadow: 0 2px 8px rgba(0,0,0,0.08); background: white; }
+    }
+
+    /* Edit-mode: disable lightbox cursor hint */
+    body.edit-mode .photo-card img { cursor: grab; }
+
+    /* Empty-zone placeholder (shown when all cards are dragged out) */
+    .drop-empty-hint {
+        display: none; width: 100%; padding: 18px;
+        text-align: center; font-size: 12px; color: #aab8c8; font-style: italic;
+        border: 2px dashed rgba(46,134,222,0.3); border-radius: 8px;
+        pointer-events: none;
+    }
+    body.edit-mode .photo-grid:empty + .drop-empty-hint,
+    body.edit-mode .drop-empty-hint.visible { display: block; }
+"""
+
+# ── Drag-and-Drop JS ───────────────────────────────────────────────────────────
+DRAG_DROP_JS = """
+<script>
+// ============================================================
+// DRAG-AND-DROP ENGINE
+// ============================================================
+
+// Global state
+window._editMode   = false;
+window._dragActive = false;
+let _dragging      = null;   // the card element being dragged
+let _sourceZone    = null;   // the photo-grid it came from
+let _undoStack     = [];     // [{card, fromZone, fromIndex, toZone, toIndex}]
+let _editCount     = 0;
+
+// ── Edit-mode toggle ────────────────────────────────────────
+const editBtn  = document.getElementById('edit-mode-btn');
+const undoBtn  = document.getElementById('undo-btn');
+const resetBtn = document.getElementById('reset-btn');
+const badge    = document.getElementById('edit-count-badge');
+
+editBtn.addEventListener('click', toggleEditMode);
+
+function toggleEditMode() {
+    window._editMode = !window._editMode;
+    document.body.classList.toggle('edit-mode', window._editMode);
+    editBtn.classList.toggle('active', window._editMode);
+    editBtn.textContent = window._editMode ? '✏️ Editing On' : '✏️ Edit Photos';
+    document.getElementById('edit-mode-hint').textContent = window._editMode
+        ? 'Drag photos between zones · Ctrl+Z to undo'
+        : 'Enable to rearrange photos';
+    refreshZones();
+}
+
+// Keyboard shortcut: Ctrl/Cmd+Z → undo
+document.addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'z' && window._editMode) {
+        e.preventDefault();
+        undoLast();
+    }
+});
+
+// ── Undo ────────────────────────────────────────────────────
+undoBtn.addEventListener('click', undoLast);
+
+function undoLast() {
+    if (!_undoStack.length) return;
+    const op = _undoStack.pop();
+
+    // Re-insert the card at its original position
+    const children = [...op.fromZone.querySelectorAll('.photo-card')];
+    if (op.fromIndex >= children.length) {
+        op.fromZone.appendChild(op.card);
+    } else {
+        op.fromZone.insertBefore(op.card, children[op.fromIndex]);
+    }
+
+    op.card.classList.add('just-dropped');
+    op.card.addEventListener('animationend', () => op.card.classList.remove('just-dropped'), {once:true});
+
+    _editCount = Math.max(0, _editCount - 1);
+    refreshBadge();
+    refreshZones();
+    syncCounters();
+}
+
+// ── Reset all edits ─────────────────────────────────────────
+resetBtn.addEventListener('click', function() {
+    if (!_undoStack.length) return;
+    if (!confirm('Reset all photo edits and restore the original layout?')) return;
+    while (_undoStack.length) undoLast();
+});
+
+// ── Helpers ─────────────────────────────────────────────────
+function refreshBadge() {
+    undoBtn.disabled  = _undoStack.length === 0;
+    resetBtn.disabled = _undoStack.length === 0;
+    if (_editCount > 0) {
+        badge.textContent = _editCount + ' edit' + (_editCount !== 1 ? 's' : '');
+        badge.style.display = 'inline-block';
+    } else {
+        badge.style.display = 'none';
+    }
+}
+
+// Update the "(N photos)" counters in each phase-section header
+function syncCounters() {
+    document.querySelectorAll('.phase-section').forEach(section => {
+        const grid    = section.querySelector('.photo-grid');
+        const counter = section.querySelector('.phase-count');
+        if (grid && counter) {
+            const n = grid.querySelectorAll('.photo-card').length;
+            counter.textContent = n + ' photo' + (n !== 1 ? 's' : '');
+        }
+    });
+}
+
+// Ensure every photo-grid has a drop-empty-hint sibling
+function refreshZones() {
+    document.querySelectorAll('.photo-grid').forEach(grid => {
+        let hint = grid.nextElementSibling;
+        if (!hint || !hint.classList.contains('drop-empty-hint')) {
+            hint = document.createElement('div');
+            hint.className = 'drop-empty-hint';
+            hint.textContent = 'Drop photos here';
+            grid.parentNode.insertBefore(hint, grid.nextSibling);
+        }
+        // Toggle visibility
+        const empty = grid.querySelectorAll('.photo-card').length === 0;
+        hint.classList.toggle('visible', empty && window._editMode);
+    });
+}
+
+// ── Drag event wiring ────────────────────────────────────────
+// We use event delegation on document so dynamically-moved cards
+// keep working without re-binding.
+
+document.addEventListener('dragstart', function(e) {
+    if (!window._editMode) return;
+    const card = e.target.closest('.photo-card');
+    if (!card) return;
+
+    _dragging       = card;
+    _sourceZone     = card.closest('.photo-grid');
+    window._dragActive = true;
+
+    // Semi-transparent ghost (browser default is fine, but we fade the source)
+    setTimeout(() => card.classList.add('dragging'), 0);
+    e.dataTransfer.effectAllowed = 'move';
+    // Store card URL as transfer data (used for cross-zone logic)
+    const img = card.querySelector('img');
+    if (img) e.dataTransfer.setData('text/plain', img.src);
+});
+
+document.addEventListener('dragend', function(e) {
+    if (_dragging) {
+        _dragging.classList.remove('dragging');
+        _dragging = null;
+    }
+    window._dragActive = false;
+
+    // Clean up all drop indicators and highlights
+    document.querySelectorAll('.drop-indicator').forEach(el => el.remove());
+    document.querySelectorAll('.photo-grid.drag-over').forEach(el => el.classList.remove('drag-over'));
+    refreshZones();
+    syncCounters();
+});
+
+document.addEventListener('dragover', function(e) {
+    if (!window._editMode || !_dragging) return;
+    const grid = e.target.closest('.photo-grid');
+    if (!grid) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+
+    grid.classList.add('drag-over');
+
+    // Remove any existing indicator
+    grid.querySelectorAll('.drop-indicator').forEach(el => el.remove());
+
+    // Find the card we're hovering over and insert an indicator before it
+    const cards = [...grid.querySelectorAll('.photo-card:not(.dragging)')];
+    let insertBefore = null;
+
+    for (const c of cards) {
+        const rect = c.getBoundingClientRect();
+        const midX = rect.left + rect.width / 2;
+        if (e.clientX < midX) {
+            insertBefore = c;
+            break;
+        }
+    }
+
+    const indicator = document.createElement('div');
+    indicator.className = 'drop-indicator';
+    if (insertBefore) {
+        grid.insertBefore(indicator, insertBefore);
+    } else {
+        grid.appendChild(indicator);
+    }
+});
+
+document.addEventListener('dragleave', function(e) {
+    const grid = e.target.closest('.photo-grid');
+    if (!grid) return;
+    // Only clear if we truly left the grid (not entered a child)
+    if (!grid.contains(e.relatedTarget)) {
+        grid.classList.remove('drag-over');
+        grid.querySelectorAll('.drop-indicator').forEach(el => el.remove());
+    }
+});
+
+document.addEventListener('drop', function(e) {
+    if (!window._editMode || !_dragging) return;
+    const grid = e.target.closest('.photo-grid');
+    if (!grid || grid === _dragging) return;
+    e.preventDefault();
+
+    grid.classList.remove('drag-over');
+
+    // Find insert position (before whichever card the cursor is left of)
+    const cards = [...grid.querySelectorAll('.photo-card:not(.dragging)')];
+    let insertBefore = null;
+    for (const c of cards) {
+        const rect = c.getBoundingClientRect();
+        if (e.clientX < rect.left + rect.width / 2) {
+            insertBefore = c;
+            break;
+        }
+    }
+
+    // Record undo state BEFORE the move
+    const fromZone  = _sourceZone;
+    const fromIndex = [...fromZone.querySelectorAll('.photo-card')].indexOf(_dragging);
+    const toZone    = grid;
+    const toIndex   = insertBefore
+        ? [...toZone.querySelectorAll('.photo-card')].indexOf(insertBefore)
+        : toZone.querySelectorAll('.photo-card').length;
+
+    _undoStack.push({ card: _dragging, fromZone, fromIndex, toZone, toIndex });
+
+    // Perform the move
+    if (insertBefore) {
+        grid.insertBefore(_dragging, insertBefore);
+    } else {
+        grid.appendChild(_dragging);
+    }
+
+    // Visual feedback
+    _dragging.classList.add('just-dropped');
+    _dragging.addEventListener('animationend', () => _dragging.classList.remove('just-dropped'), {once:true});
+
+    _editCount++;
+    refreshBadge();
+    refreshZones();
+    syncCounters();
+});
+
+// ── Make all cards draggable in edit mode ───────────────────
+// We set draggable=true on all .photo-card elements at init,
+// but only the dragstart handler actually fires when editMode is off.
+document.querySelectorAll('.photo-card').forEach(card => {
+    card.setAttribute('draggable', 'true');
+});
+
+// ── Initial state ────────────────────────────────────────────
+refreshBadge();
+refreshZones();
+</script>
+"""
+
+# ── Updated PDF_PROGRESS_JS: sends current DOM order to the server ─────────────
 PDF_PROGRESS_JS = """
 <script>
+function collectPhotoEdits() {
+    // Walk every photo-grid in DOM order and record [zoneId → [orderedPhotoUrls]]
+    // The zone id is the data-zone attribute set on each .photo-grid
+    const edits = {};
+    document.querySelectorAll('.photo-grid[data-zone]').forEach(grid => {
+        const zoneId = grid.dataset.zone;
+        const urls = [...grid.querySelectorAll('.photo-card img')].map(img => img.src);
+        edits[zoneId] = urls;
+    });
+    return edits;
+}
+
 function generatePDF() {
     const params = new URLSearchParams(window.location.search);
-    const btn = document.getElementById('pdfBtn');
+    const btn    = document.getElementById('pdfBtn');
     const status = document.getElementById('pdfStatus');
-    const bar = document.getElementById('pdfProgressBar');
-    const barWrap = document.getElementById('pdfProgressWrap');
+    const bar    = document.getElementById('pdfProgressBar');
+    const barWrap= document.getElementById('pdfProgressWrap');
 
     btn.disabled = true;
     btn.textContent = "Generating...";
@@ -718,55 +997,47 @@ function generatePDF() {
     bar.style.width = "0%";
     status.textContent = "Starting...";
 
+    const photoEdits = _editCount > 0 ? collectPhotoEdits() : null;
+
     fetch('/start_pdf_job', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-        project_id: params.get("project_id"),
-        project_name: params.get("project_name"),
-        multi_bath: params.get("multi_bath"),
-        label_format: params.get("label_format"),
-        bath_names: params.get("bath_names"),
-        special_rooms: params.get("special_rooms"),
-    }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            project_id:   params.get("project_id"),
+            project_name: params.get("project_name"),
+            multi_bath:   params.get("multi_bath"),
+            label_format: params.get("label_format"),
+            bath_names:   params.get("bath_names"),
+            special_rooms:params.get("special_rooms"),
+            photo_edits:  photoEdits,   // ← drag-and-drop order, or null
+        }),
     })
     .then(res => res.json())
     .then(({ job_id }) => {
-
         const interval = setInterval(() => {
             fetch(`/job_status/${job_id}`)
                 .then(res => res.json())
                 .then(data => {
-
                     if (data.status === "complete") {
                         clearInterval(interval);
-
                         bar.style.width = "100%";
-                        status.textContent = "✅ PDF ready!";
-
+                        status.textContent = _editCount > 0
+                            ? "✅ PDF ready! (" + _editCount + " edit" + (_editCount!==1?'s':'') + " applied)"
+                            : "✅ PDF ready!";
                         btn.textContent = "Open PDF";
                         btn.disabled = false;
-
-                        btn.onclick = () => {
-                            window.open(`/reports/${data.pdf_filename}`, "_blank");
-                        };
+                        btn.onclick = () => window.open(`/reports/${data.pdf_filename}`, "_blank");
                     }
-
                     if (data.status === "error") {
                         clearInterval(interval);
-
                         status.textContent = "❌ Error generating PDF";
                         btn.textContent = "Try Again";
                         btn.disabled = false;
                         btn.onclick = generatePDF;
                     }
-
                 });
-        }, 2000); // poll every 2 seconds
-
+        }, 2000);
     });
-
-    
 }
 </script>
 """
@@ -786,7 +1057,25 @@ PDF_BUTTON_HTML = """
 </div>
 """
 
-def make_photo_card_html(photo_data, idx=None):
+# ── Edit-mode toolbar HTML (injected once at top of <body>) ───────────────────
+DND_TOOLBAR_HTML = """
+<div id="dnd-toolbar">
+    <span class="toolbar-label">Layout</span>
+    <button id="edit-mode-btn">✏️ Edit Photos</button>
+    <button id="undo-btn" disabled>↩ Undo</button>
+    <button id="reset-btn" disabled>⟳ Reset</button>
+    <span id="edit-count-badge"></span>
+    <span id="edit-mode-hint">Enable to rearrange photos</span>
+</div>
+"""
+
+
+def make_photo_card_html(photo_data, idx=None, zone_id=None):
+    """
+    Renders one photo card.
+    zone_id is unused here but kept for signature compatibility.
+    The data-zone attribute is placed on the .photo-grid wrapper, not individual cards.
+    """
     url = photo_data["url"]
     captured_at = photo_data.get("captured_at")
     latitude = photo_data.get("latitude")
@@ -804,14 +1093,12 @@ def make_photo_card_html(photo_data, idx=None):
 
     img_style = "" if has_image else "filter: grayscale(100%); opacity: 0.6;"
 
-    # Build JSON-safe tag list and geo strings for lightbox
     import json
     tags_json = json.dumps(all_tags)
     geo_label = f"{latitude:.4f}, {longitude:.4f}" if (latitude and longitude) else ""
     geo_url   = f"https://www.google.com/maps/search/?api=1&query={latitude},{longitude}" if (latitude and longitude) else ""
 
-    html  = f'<div class="photo-card">'
-    #html += f'<img src="{url}" loading="lazy" style="{img_style}" onclick="openLightbox({json.dumps(url)},{tags_json},{json.dumps(timestamp_str)},{json.dumps(geo_label)},{json.dumps(geo_url)})">'
+    html  = f'<div class="photo-card" draggable="true">'
     html += f'<img src="{url}" loading="lazy" style="{img_style}" onclick=\'openLightbox({json.dumps(url)},{tags_json},{json.dumps(timestamp_str)},{json.dumps(geo_label)},{json.dumps(geo_url)})\'>'
     html += '<div class="photo-metadata">'
     html += f'<div class="timestamp">📷 {timestamp_str}</div>'
@@ -823,6 +1110,12 @@ def make_photo_card_html(photo_data, idx=None):
         html += '<div class="geotag">📍 No location data</div>'
     html += '</div></div>'
     return html
+
+
+def _photo_grid(photos, zone_id):
+    """Renders a .photo-grid div with a data-zone attribute for drag-and-drop tracking."""
+    cards = ''.join(make_photo_card_html(p) for p in photos)
+    return f'<div class="photo-grid" data-zone="{zone_id}">{cards}</div>'
 
 
 def make_shared_css():
@@ -916,6 +1209,43 @@ def make_shared_css():
     """
 
 
+# ── Zone-ID generator ─────────────────────────────────────────────────────────
+def _zone_id(*parts):
+    """Creates a stable, URL-safe zone identifier from structural keys."""
+    return "__".join(str(p).replace(" ", "_") for p in parts if p)
+
+
+# ── Head snippet (combines all CSS) ──────────────────────────────────────────
+def _make_head(title):
+    return f"""<!DOCTYPE html><html><head>
+    <title>{title} — Report</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>{make_shared_css()}{LIGHTBOX_CSS}{DRAG_DROP_CSS}</style>
+    </head><body>
+    {DND_TOOLBAR_HTML}
+    {LIGHTBOX_HTML}"""
+
+
+def _make_tail():
+    return f'{LIGHTBOX_JS}{PDF_PROGRESS_JS}{DRAG_DROP_JS}</body></html>'
+
+
+# ── Phase-section builder (shared by all 4 generators) ───────────────────────
+def _phase_section(photos, phase, zone_id):
+    badge = "before" if phase == "BEFORE" else ("after" if phase == "AFTER" else "untagged")
+    label = phase if phase != "UNTAGGED" else "Untagged"
+    html  = f'<div class="phase-section">'
+    html += f'<div class="phase-header"><h3 class="phase-title"><span class="phase-badge {badge}">{label}</span></h3>'
+    html += f'<span class="phase-count">{len(photos)} photos</span></div>'
+    if photos:
+        html += _photo_grid(photos, zone_id)
+    else:
+        html += f'<div class="photo-grid" data-zone="{zone_id}"></div>'
+        html += '<div class="no-photos">No photos</div>'
+    html += '</div>'
+    return html
+
+
 # ============================
 # HTML GENERATORS (ALL MODES)
 # ============================
@@ -925,13 +1255,8 @@ def generate_html_unit_phase(structure, special_rooms_structure=None):
     total_units = len(structure)
     total_photos = sum(len(ph) for u in structure.values() for ph in u.values())
 
-    html = f"""<!DOCTYPE html><html><head>
-    <title>{title} — Report</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>{make_shared_css()}{LIGHTBOX_CSS}</style>
-    </head><body>
-    {LIGHTBOX_HTML}
-    <div class="container">
+    html  = _make_head(title)
+    html += f"""<div class="container">
         <div class="report-header">
             <h1>{title}</h1>
             <div class="meta">Generated {now}</div>
@@ -941,27 +1266,21 @@ def generate_html_unit_phase(structure, special_rooms_structure=None):
             <div class="summary-item"><span class="number">{total_units}</span><div class="label">Units</div></div>
             <div class="summary-item"><span class="number">{total_photos}</span><div class="label">Photos</div></div>
         </div>
-        <div class="content">
-    """
+        <div class="content">"""
 
     for unit in sorted(structure, key=lambda u: (u == "UNASSIGNED", u)):
-        html += f'<div class="unit-section"><div class="unit-header">🏠 Unit {unit}</div><div class="unit-phases" style="padding:20px;">'
+        html += f'<div class="unit-section"><div class="unit-header">🏠 Unit {unit}</div>'
+        html += '<div class="unit-phases" style="padding:20px;">'
         for phase in PHASE_ORDER:
             photos = structure[unit].get(phase, [])
             if phase == "UNTAGGED" and not photos:
                 continue
-            badge = "before" if phase == "BEFORE" else ("after" if phase == "AFTER" else "untagged")
-            label = phase if phase != "UNTAGGED" else "Untagged"
-            html += f'<div class="phase-section"><div class="phase-header"><h3 class="phase-title"><span class="phase-badge {badge}">{label}</span></h3><span class="phase-count">{len(photos)} photos</span></div>'
-            if photos:
-                html += '<div class="photo-grid">' + ''.join(make_photo_card_html(p) for p in photos) + '</div>'
-            else:
-                html += '<div class="no-photos">No photos</div>'
-            html += '</div>'
+            zid = _zone_id("unit", unit, phase)
+            html += _phase_section(photos, phase, zid)
         html += '</div></div>'
 
     html += generate_special_rooms_html(special_rooms_structure or {})
-    html += f'</div></div>{LIGHTBOX_JS}{PDF_PROGRESS_JS}</body></html>'
+    html += f'</div></div>{_make_tail()}'
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write(html)
 
@@ -974,13 +1293,8 @@ def generate_html_bldg_unit_phase(structure, special_rooms_structure=None):
     total_photos = sum(len(photos) for units in structure.values()
                        for phases in units.values() for photos in phases.values())
 
-    html = f"""<!DOCTYPE html><html><head>
-    <title>{title} — Report</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>{make_shared_css()}{LIGHTBOX_CSS}</style>
-    </head><body>
-    {LIGHTBOX_HTML}
-    <div class="container">
+    html  = _make_head(title)
+    html += f"""<div class="container">
         <div class="report-header">
             <h1>{title}</h1>
             <div class="meta">Generated {now}</div>
@@ -991,30 +1305,24 @@ def generate_html_bldg_unit_phase(structure, special_rooms_structure=None):
             <div class="summary-item"><span class="number">{total_units}</span><div class="label">Units</div></div>
             <div class="summary-item"><span class="number">{total_photos}</span><div class="label">Photos</div></div>
         </div>
-        <div class="content">
-    """
+        <div class="content">"""
 
     for bldg in sorted(structure):
         html += f'<div class="building-section"><h2 class="building-title">🏢 Building {bldg}</h2>'
         for unit in sorted(structure[bldg], key=lambda u: (u == "UNASSIGNED", u)):
-            html += f'<div class="unit-section"><div class="unit-header">🏠 Unit {unit}</div><div class="unit-phases" style="padding:20px;">'
+            html += f'<div class="unit-section"><div class="unit-header">🏠 Unit {unit}</div>'
+            html += '<div class="unit-phases" style="padding:20px;">'
             for phase in PHASE_ORDER:
                 photos = structure[bldg][unit].get(phase, [])
                 if phase == "UNTAGGED" and not photos:
                     continue
-                badge = "before" if phase == "BEFORE" else ("after" if phase == "AFTER" else "untagged")
-                label = phase if phase != "UNTAGGED" else "Untagged"
-                html += f'<div class="phase-section"><div class="phase-header"><h3 class="phase-title"><span class="phase-badge {badge}">{label}</span></h3><span class="phase-count">{len(photos)} photos</span></div>'
-                if photos:
-                    html += '<div class="photo-grid">' + ''.join(make_photo_card_html(p) for p in photos) + '</div>'
-                else:
-                    html += '<div class="no-photos">No photos</div>'
-                html += '</div>'
+                zid = _zone_id("bldg", bldg, "unit", unit, phase)
+                html += _phase_section(photos, phase, zid)
             html += '</div></div>'
         html += '</div>'
 
     html += generate_special_rooms_html(special_rooms_structure or {})
-    html += f'</div></div>{LIGHTBOX_JS}{PDF_PROGRESS_JS}</body></html>'
+    html += f'</div></div>{_make_tail()}'
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write(html)
 
@@ -1026,13 +1334,8 @@ def generate_html_unit_bath_phase(structure, special_rooms_structure=None):
     total_photos = sum(len(photos) for units in structure.values()
                        for baths in units.values() for photos in baths.values())
 
-    html = f"""<!DOCTYPE html><html><head>
-    <title>{title} — Report</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>{make_shared_css()}{LIGHTBOX_CSS}</style>
-    </head><body>
-    {LIGHTBOX_HTML}
-    <div class="container">
+    html  = _make_head(title)
+    html += f"""<div class="container">
         <div class="report-header">
             <h1>{title}</h1>
             <div class="meta">Generated {now}</div>
@@ -1042,30 +1345,24 @@ def generate_html_unit_bath_phase(structure, special_rooms_structure=None):
             <div class="summary-item"><span class="number">{total_units}</span><div class="label">Units</div></div>
             <div class="summary-item"><span class="number">{total_photos}</span><div class="label">Photos</div></div>
         </div>
-        <div class="content">
-    """
+        <div class="content">"""
 
     for unit in sorted(structure, key=lambda u: (u == "UNASSIGNED", u)):
         html += f'<div class="unit-section"><div class="unit-header">🏠 Unit {unit}</div>'
         for bath in sorted(structure[unit]):
-            html += f'<div class="bathroom-group"><div class="bathroom-header">🛁 {bath}</div><div class="unit-phases">'
+            html += f'<div class="bathroom-group"><div class="bathroom-header">🛁 {bath}</div>'
+            html += '<div class="unit-phases">'
             for phase in PHASE_ORDER:
                 photos = structure[unit][bath].get(phase, [])
                 if phase == "UNTAGGED" and not photos:
                     continue
-                badge = "before" if phase == "BEFORE" else ("after" if phase == "AFTER" else "untagged")
-                label = phase if phase != "UNTAGGED" else "Untagged"
-                html += f'<div class="phase-section"><div class="phase-header"><h3 class="phase-title"><span class="phase-badge {badge}">{label}</span></h3><span class="phase-count">{len(photos)} photos</span></div>'
-                if photos:
-                    html += '<div class="photo-grid">' + ''.join(make_photo_card_html(p) for p in photos) + '</div>'
-                else:
-                    html += '<div class="no-photos">No photos</div>'
-                html += '</div>'
+                zid = _zone_id("unit", unit, "bath", bath, phase)
+                html += _phase_section(photos, phase, zid)
             html += '</div></div>'
         html += '</div>'
 
     html += generate_special_rooms_html(special_rooms_structure or {})
-    html += f'</div></div>{LIGHTBOX_JS}{PDF_PROGRESS_JS}</body></html>'
+    html += f'</div></div>{_make_tail()}'
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write(html)
 
@@ -1080,13 +1377,8 @@ def generate_html_full_hierarchy(structure, special_rooms_structure=None):
                        for baths in units_val.values()
                        for photos in baths.values())
 
-    html = f"""<!DOCTYPE html><html><head>
-    <title>{title} — Report</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>{make_shared_css()}{LIGHTBOX_CSS}</style>
-    </head><body>
-    {LIGHTBOX_HTML}
-    <div class="container">
+    html  = _make_head(title)
+    html += f"""<div class="container">
         <div class="report-header">
             <h1>{title}</h1>
             <div class="meta">Installation Photos | Generated {now}</div>
@@ -1097,33 +1389,27 @@ def generate_html_full_hierarchy(structure, special_rooms_structure=None):
             <div class="summary-item"><span class="number">{total_units}</span><div class="label">Units</div></div>
             <div class="summary-item"><span class="number">{total_photos}</span><div class="label">Photos</div></div>
         </div>
-        <div class="content">
-    """
+        <div class="content">"""
 
     for bldg in sorted(structure):
         html += f'<div class="building-section"><h2 class="building-title">🏢 Building {bldg}</h2>'
         for unit in sorted(structure[bldg], key=lambda u: (u == "UNASSIGNED", u)):
             html += f'<div class="unit-section"><div class="unit-header">🏠 Unit {unit}</div>'
             for bath in sorted(structure[bldg][unit]):
-                html += f'<div class="bathroom-group"><div class="bathroom-header">🛁 {bath}</div><div class="unit-phases">'
+                html += f'<div class="bathroom-group"><div class="bathroom-header">🛁 {bath}</div>'
+                html += '<div class="unit-phases">'
                 for phase in PHASE_ORDER:
                     photos = structure[bldg][unit][bath].get(phase, [])
                     if phase == "UNTAGGED" and not photos:
                         continue
-                    badge = "before" if phase == "BEFORE" else ("after" if phase == "AFTER" else "untagged")
-                    label = phase if phase != "UNTAGGED" else "Untagged"
-                    html += f'<div class="phase-section"><div class="phase-header"><h3 class="phase-title"><span class="phase-badge {badge}">{label}</span></h3><span class="phase-count">{len(photos)} photos</span></div>'
-                    if photos:
-                        html += '<div class="photo-grid">' + ''.join(make_photo_card_html(p) for p in photos) + '</div>'
-                    else:
-                        html += '<div class="no-photos">No photos</div>'
-                    html += '</div>'
+                    zid = _zone_id("bldg", bldg, "unit", unit, "bath", bath, phase)
+                    html += _phase_section(photos, phase, zid)
                 html += '</div></div>'
             html += '</div>'
         html += '</div>'
 
     html += generate_special_rooms_html(special_rooms_structure or {})
-    html += f'</div></div>{LIGHTBOX_JS}{PDF_PROGRESS_JS}</body></html>'
+    html += f'</div></div>{_make_tail()}'
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write(html)
 
@@ -1140,7 +1426,6 @@ def determine_html_method(key):
 
 
 def generate_special_rooms_html(special_rooms_structure):
-    """Returns HTML string for special room sections to be appended to any report mode."""
     if not special_rooms_structure:
         return ""
 
@@ -1149,21 +1434,14 @@ def generate_special_rooms_html(special_rooms_structure):
 
     for room_name in sorted(special_rooms_structure):
         phases_dict = special_rooms_structure[room_name]
-        total_room_photos = sum(len(v) for v in phases_dict.values())
         html += f'<div class="unit-section"><div class="unit-header" style="background:#6c3483;">🏛 {room_name}</div>'
         html += '<div class="unit-phases" style="padding:20px;">'
         for phase in PHASE_ORDER:
             photos = phases_dict.get(phase, [])
             if phase == "UNTAGGED" and not photos:
                 continue
-            badge = "before" if phase == "BEFORE" else ("after" if phase == "AFTER" else "untagged")
-            label = phase if phase != "UNTAGGED" else "Untagged"
-            html += f'<div class="phase-section"><div class="phase-header"><h3 class="phase-title"><span class="phase-badge {badge}">{label}</span></h3><span class="phase-count">{len(photos)} photos</span></div>'
-            if photos:
-                html += '<div class="photo-grid">' + ''.join(make_photo_card_html(p) for p in photos) + '</div>'
-            else:
-                html += '<div class="no-photos">No photos</div>'
-            html += '</div>'
+            zid = _zone_id("special", room_name.replace(" ", "_"), phase)
+            html += _phase_section(photos, phase, zid)
         html += '</div></div>'
 
     html += '</div>'
