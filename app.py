@@ -245,12 +245,34 @@ def start_job():
             missing = analyze_missing_photos(structured)
             missing_before = missing.get("BEFORE", [])
             missing_after  = missing.get("AFTER",  [])
-            _log(job_id, f"📊 Missing BEFORE: {len(missing_before)}")
-            _log(job_id, f"📊 Missing AFTER: {len(missing_after)}")
-            for loc in missing_before:
-                _log(job_id, f"🔴 {loc}")
-            for loc in missing_after:
-                _log(job_id, f"🟡 {loc}")
+            # _log(job_id, f"📊 Missing BEFORE: {len(missing_before)}")
+            # _log(job_id, f"📊 Missing AFTER: {len(missing_after)}")
+            # for loc in missing_before:
+            #     _log(job_id, f"🔴 {loc}")
+            # for loc in missing_after:
+            #     _log(job_id, f"🟡 {loc}")
+            _log(job_id, "📊 MISSING PHOTO SUMMARY")
+
+            # ── BEFORE section ───────────────────────
+            _log(job_id, f"🟠 Missing BEFORE photos: {len(missing_before)}")
+            if missing_before:
+                _log(job_id, "   ─────────────────────")
+                for loc in missing_before:
+                    _log(job_id, f"   • {loc}")
+            else:
+                _log(job_id, "   ✓ None")
+            _log(job_id, "")  # blank line
+
+            # ── AFTER section ────────────────────────
+            _log(job_id, f"🟡 Missing AFTER photos: {len(missing_after)}")
+            if missing_after:
+                _log(job_id, "   ─────────────────────")
+                for loc in missing_after:
+                    _log(job_id, f"   • {loc}")
+            else:
+                _log(job_id, "   ✓ None")
+
+            _log(job_id, "")  # blank line    
             if special_rooms_structured:
                 _log(job_id, f"🏛 Special areas: {', '.join(special_rooms_structured.keys())}")
 

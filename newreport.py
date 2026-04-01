@@ -733,6 +733,37 @@ let _sourceZone    = null;   // the photo-grid it came from
 let _undoStack     = [];     // [{card, fromZone, fromIndex, toZone, toIndex}]
 let _editCount     = 0;
 
+// ── Auto-scroll during drag ────────────────────────────────
+let _scrollDir = 0; // -1 = up, 1 = down, 0 = none
+const _scrollMargin = 80; // px from edge
+const _maxScrollSpeed = 20;
+
+function _updateScrollDirection(clientY) {
+    const h = window.innerHeight;
+
+    if (clientY < _scrollMargin) {
+        // Closer to top = faster scroll
+        const intensity = (_scrollMargin - clientY) / _scrollMargin;
+        _scrollDir = -intensity;
+    } else if (clientY > h - _scrollMargin) {
+        // Closer to bottom = faster scroll
+        const intensity = (clientY - (h - _scrollMargin)) / _scrollMargin;
+        _scrollDir = intensity;
+    } else {
+        _scrollDir = 0;
+    }
+}
+
+function _autoScrollLoop() {
+    if (window._dragActive && _scrollDir !== 0) {
+        window.scrollBy(0, _scrollDir * _maxScrollSpeed);
+    }
+    requestAnimationFrame(_autoScrollLoop);
+}
+
+// Start the loop once
+_autoScrollLoop();
+
 // ── Edit-mode toggle ────────────────────────────────────────
 const editBtn  = document.getElementById('edit-mode-btn');
 const undoBtn  = document.getElementById('undo-btn');
@@ -858,6 +889,7 @@ document.addEventListener('dragend', function(e) {
         _dragging = null;
     }
     window._dragActive = false;
+    _scrollDir = 0; // Reset scroll direction
 
     // Clean up all drop indicators and highlights
     document.querySelectorAll('.drop-indicator').forEach(el => el.remove());
@@ -868,6 +900,7 @@ document.addEventListener('dragend', function(e) {
 
 document.addEventListener('dragover', function(e) {
     if (!window._editMode || !_dragging) return;
+    _updateScrollDirection(e.clientY);
     const grid = e.target.closest('.photo-grid');
     if (!grid) return;
     e.preventDefault();

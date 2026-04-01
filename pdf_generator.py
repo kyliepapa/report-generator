@@ -64,8 +64,10 @@ style_cap_R    = ParagraphStyle("CapR",  fontSize=6.5, leading=9,   alignment=TA
 style_cap_R2   = ParagraphStyle("CapR2", fontSize=6,   leading=8.5, alignment=TA_LEFT,  textColor=colors.HexColor("#888888"), spaceAfter=1)
 style_no_photo = ParagraphStyle("NoPhoto", fontSize=8, leading=11, alignment=TA_CENTER, textColor=colors.HexColor("#bbbbbb"), fontName="Helvetica-Oblique")
 
-BEFORE_COLOR   = colors.HexColor("#c0392b")
-AFTER_COLOR    = colors.HexColor("#10ac84")
+# BEFORE_COLOR   = colors.HexColor("#c0392b")
+# AFTER_COLOR    = colors.HexColor("#10ac84")
+BEFORE_COLOR   = colors.HexColor("#7f8c8d")
+AFTER_COLOR    = colors.HexColor("#7f8c8d")
 UNTAGGED_COLOR = colors.HexColor("#7f8c8d")
 DIVIDER_COLOR  = colors.HexColor("#dde3ed")
 HEADER_BG      = colors.HexColor("#1a2535")
