@@ -23,7 +23,7 @@ session.mount('http://', HTTPAdapter(max_retries=retries))
 session.mount('https://', HTTPAdapter(max_retries=retries))
 
 # ============================
-# PAGE GEOMETRY
+# PAGE GEOMETRY — GRID MODE
 # ============================
 PAGE_W, PAGE_H = letter
 MARGIN    = 0.6 * inch
@@ -38,9 +38,17 @@ CAPTION_W = 1.05 * inch
 PHOTO_W   = IMG_W - CAPTION_W        # actual rendered image width
 
 # Photo height — sized so 2 rows fit comfortably on a page
-# Usable body height ≈ 11 - 0.85(top) - 0.5(bottom) - 0.26(header) - 0.28(footer) ≈ 9.1"
-# 2 rows + inter-row spacing: each row gets ~4.35" total; image gets ~3.1"
 IMG_H = 3.05 * inch
+
+# ============================
+# PAGE GEOMETRY — LINEAR MODE
+# ============================
+# Photo takes left ~60% of content width; caption takes right ~40%
+LINEAR_PHOTO_W   = CONTENT_W * 0.58
+LINEAR_CAPTION_W = CONTENT_W * 0.42
+# Target 3-4 photos per page → each row ~2.1" tall
+LINEAR_IMG_H     = 2.1 * inch
+LINEAR_IMG_W     = LINEAR_PHOTO_W   # image fills the photo column
 
 # ============================
 # STYLES
@@ -56,16 +64,18 @@ style_bath     = ParagraphStyle("BathHdr",     fontSize=10, leading=13, spaceAft
 style_phase    = ParagraphStyle("PhaseLabel",  fontSize=7.5, leading=10, alignment=TA_CENTER, textColor=colors.white, fontName="Helvetica-Bold")
 style_untag_hdr= ParagraphStyle("UntagHdr",    fontSize=9,  leading=12, spaceAfter=2, spaceBefore=4, textColor=colors.HexColor("#7f8c8d"), fontName="Helvetica-Bold")
 
-# Caption text — left-photo captions are right-aligned (faces the image to its right),
-# right-photo captions are left-aligned (faces the image to its left).
+# Caption text styles — grid mode (outer captions face the image)
 style_cap_L    = ParagraphStyle("CapL",  fontSize=6.5, leading=9,   alignment=TA_RIGHT, textColor=colors.HexColor("#444444"), spaceAfter=2)
 style_cap_L2   = ParagraphStyle("CapL2", fontSize=6,   leading=8.5, alignment=TA_RIGHT, textColor=colors.HexColor("#888888"), spaceAfter=1)
 style_cap_R    = ParagraphStyle("CapR",  fontSize=6.5, leading=9,   alignment=TA_LEFT,  textColor=colors.HexColor("#444444"), spaceAfter=2)
 style_cap_R2   = ParagraphStyle("CapR2", fontSize=6,   leading=8.5, alignment=TA_LEFT,  textColor=colors.HexColor("#888888"), spaceAfter=1)
+
+# Caption text styles — linear mode (caption always to the right of image)
+style_lin_cap  = ParagraphStyle("LinCap",  fontSize=7.5, leading=11, alignment=TA_LEFT, textColor=colors.HexColor("#333333"), spaceAfter=3)
+style_lin_cap2 = ParagraphStyle("LinCap2", fontSize=6.5, leading=9.5, alignment=TA_LEFT, textColor=colors.HexColor("#777777"), spaceAfter=2)
+
 style_no_photo = ParagraphStyle("NoPhoto", fontSize=8, leading=11, alignment=TA_CENTER, textColor=colors.HexColor("#bbbbbb"), fontName="Helvetica-Oblique")
 
-# BEFORE_COLOR   = colors.HexColor("#c0392b")
-# AFTER_COLOR    = colors.HexColor("#10ac84")
 BEFORE_COLOR   = colors.HexColor("#7f8c8d")
 AFTER_COLOR    = colors.HexColor("#7f8c8d")
 UNTAGGED_COLOR = colors.HexColor("#7f8c8d")
@@ -78,8 +88,6 @@ HEADER_BG      = colors.HexColor("#1a2535")
 # ============================
 from PIL import Image as PILImage
 
-from PIL import Image as PILImage
-
 def fetch_image(url, max_w=PHOTO_W, max_h=IMG_H):
     try:
         r = session.get(url, timeout=8)
@@ -89,7 +97,6 @@ def fetch_image(url, max_w=PHOTO_W, max_h=IMG_H):
             if pil_img.mode in ("RGBA", "P"):
                 pil_img = pil_img.convert("RGB")
 
-            # Resize for compression (pixel space)
             TARGET_PX = 1200
             pil_img.thumbnail((TARGET_PX, TARGET_PX))
 
@@ -99,7 +106,6 @@ def fetch_image(url, max_w=PHOTO_W, max_h=IMG_H):
 
             img = Image(buffer)
 
-            # ✅ CRITICAL: re-apply layout scaling (point space)
             iw, ih = img.imageWidth, img.imageHeight
             if iw and ih:
                 ratio = min(max_w / iw, max_h / ih)
@@ -147,7 +153,7 @@ def make_header_footer(project_name):
 
 
 # ============================
-# PHASE STRIP
+# PHASE STRIP  (grid mode only)
 # ============================
 def phase_strip(label, color, width):
     tbl = Table([[Paragraph(label, style_phase)]], colWidths=[width], rowHeights=[13])
@@ -163,7 +169,7 @@ def phase_strip(label, color, width):
 
 
 # ============================
-# CAPTION BUILDER
+# CAPTION BUILDER — grid mode
 # ============================
 def build_captions(photo, side):
     cs  = style_cap_L  if side == "left" else style_cap_R
@@ -204,12 +210,51 @@ def build_captions(photo, side):
 
 
 # ============================
-# PHOTO COLUMN BUILDER
-# Produces a mini 2-column table: [caption | image] for left side,
-# [image | caption] for right side.
+# CAPTION BUILDER — linear mode
+# ============================
+def build_captions_linear(photo):
+    """Returns caption paragraphs for the right-side column in linear layout."""
+    items = []
+    if not photo:
+        return [Paragraph("—", style_lin_cap)]
+
+    ts = "Unknown"
+    try:
+        ts = datetime.fromtimestamp(int(photo.get("captured_at"))).strftime("%Y-%m-%d %H:%M")
+    except:
+        pass
+    items.append(Paragraph(f"📷  {ts}", style_lin_cap))
+
+    tag_str = (photo.get("tag_string") or "").strip()
+    for part in tag_str.split(" — "):
+        if part.strip():
+            items.append(Paragraph(part.strip(), style_lin_cap))
+
+    extras = (photo.get("extra_tags") or "").strip()
+    if extras:
+        filtered = ", ".join(
+            t for t in extras.split(", ")
+            if t.strip() and not t.strip().isdigit()
+        )
+        if filtered:
+            items.append(Paragraph(f"Tags: {filtered}", style_lin_cap2))
+
+    lat, lon = photo.get("latitude"), photo.get("longitude")
+    if lat and lon:
+        geo_url = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
+        items.append(Paragraph(
+            f'<link href="{geo_url}"><u>📍 {lat:.4f}, {lon:.4f}</u></link>',
+            style_lin_cap2
+        ))
+
+    return items
+
+
+# ============================
+# PHOTO COLUMN BUILDER — grid mode
 # ============================
 def build_photo_col(photo, phase_color, phase_label, side):
-    strip   = phase_strip(phase_label, phase_color, IMG_W)
+    strip    = phase_strip(phase_label, phase_color, IMG_W)
     captions = build_captions(photo, side)
 
     if photo and photo.get("url"):
@@ -238,7 +283,7 @@ def build_photo_col(photo, phase_color, phase_label, side):
 
 
 # ============================
-# COMPARISON ROW  (Before | After)
+# COMPARISON ROW — grid mode  (Before | After)
 # ============================
 def build_comparison_row(before_photo, after_photo):
     left  = build_photo_col(before_photo, BEFORE_COLOR, "BEFORE", "left")
@@ -258,10 +303,34 @@ def build_comparison_row(before_photo, after_photo):
 
 
 # ============================
-# UNTAGGED ROWS — paired side by side
+# SINGLE-PHOTO ROW — grid mode (for hide-empty fill or lone left-column photo)
+# ============================
+def build_single_row(photo, side="left"):
+    """Renders one photo in the grid layout; the other half is whitespace."""
+    col = build_photo_col(photo, BEFORE_COLOR if side == "left" else AFTER_COLOR,
+                          "BEFORE" if side == "left" else "AFTER", side)
+    blank = [Spacer(1, IMG_H)]   # tasteful empty column
+
+    if side == "left":
+        data = [col, blank]
+    else:
+        data = [blank, col]
+
+    tbl = Table([data], colWidths=[IMG_W, IMG_W])
+    tbl.setStyle(TableStyle([
+        ("VALIGN",       (0,0),(-1,-1), "TOP"),
+        ("LEFTPADDING",  (0,0),(-1,-1), 0),
+        ("RIGHTPADDING", (0,0),(-1,-1), 0),
+        ("TOPPADDING",   (0,0),(-1,-1), 0),
+        ("BOTTOMPADDING",(0,0),(-1,-1), 0),
+    ]))
+    return tbl
+
+
+# ============================
+# UNTAGGED ROWS — grid mode, paired side by side
 # ============================
 def build_untagged_pair(photo_left, photo_right=None):
-    """Two untagged photos side by side (outer captions), or one on the left."""
     left  = build_photo_col(photo_left,  UNTAGGED_COLOR, "ID", "left")
     right = build_photo_col(photo_right, UNTAGGED_COLOR, "ID", "right") if photo_right else [Spacer(1, 0.1*inch)]
 
@@ -279,61 +348,129 @@ def build_untagged_pair(photo_left, photo_right=None):
 
 
 # ============================
-# SECTION BUILDER
-# Bundles ALL enclosing headers with the first photo row so a page
-# never ends with only headings. Rows are also grouped in pairs so
-# the layout targets ~2 rows per page.
+# LINEAR-MODE ROW BUILDER
+# One photo (left) + metadata column (right), no phase badge, no borders.
+# ============================
+def build_linear_row(photo):
+    """Single photo + caption row for linear layout."""
+    if photo and photo.get("url"):
+        img = fetch_image(photo["url"], max_w=LINEAR_IMG_W, max_h=LINEAR_IMG_H)
+        img_cell = [img] if img else [Paragraph("[ unavailable ]", style_no_photo)]
+    else:
+        img_cell = [Spacer(1, LINEAR_IMG_H * 0.5), Paragraph("No photo available", style_no_photo)]
+
+    captions = build_captions_linear(photo)
+
+    tbl = Table([[img_cell, captions]],
+                colWidths=[LINEAR_PHOTO_W, LINEAR_CAPTION_W])
+    tbl.setStyle(TableStyle([
+        ("VALIGN",       (0,0),(-1,-1), "MIDDLE"),
+        ("LEFTPADDING",  (0,0),(0,-1),  0),
+        ("RIGHTPADDING", (0,0),(0,-1),  8),
+        ("LEFTPADDING",  (1,0),(1,-1),  10),
+        ("RIGHTPADDING", (1,0),(1,-1),  0),
+        ("TOPPADDING",   (0,0),(-1,-1), 6),
+        ("BOTTOMPADDING",(0,0),(-1,-1), 6),
+    ]))
+    return tbl
+
+
+# ============================
+# SECTION BUILDER — grid mode
 # ============================
 ROWS_PER_GROUP = 2
 
-def build_photo_section(phases_dict, header_elements):
+def build_photo_section(phases_dict, header_elements, pdf_options=None):
+    """
+    Builds grid-layout photo rows for a section.
+
+    pdf_options keys used here:
+      hide_empty_fields (bool) — skip Before/After slot if no photo; fill with untagged if available
+      hidden_photos (set)      — URLs to omit entirely
+    """
+    pdf_options    = pdf_options or {}
+    hide_empty     = pdf_options.get("hide_empty_fields", False)
+    hidden_urls    = pdf_options.get("hidden_photos", set())
+
     elements = []
 
-    before_list   = phases_dict.get("BEFORE",   [])
-    after_list    = phases_dict.get("AFTER",    [])
-    untagged_list = phases_dict.get("UNTAGGED", [])
+    before_list   = [p for p in phases_dict.get("BEFORE",   []) if p.get("url") not in hidden_urls]
+    after_list    = [p for p in phases_dict.get("AFTER",    []) if p.get("url") not in hidden_urls]
+    untagged_list = [p for p in phases_dict.get("UNTAGGED", []) if p.get("url") not in hidden_urls]
 
-    rows = max(len(before_list), len(after_list))
+    # ── Hide-empty-fields mode ────────────────────────────────────────────────
+    if hide_empty:
+        # Pool of spare untagged photos to fill lone slots
+        spare_untagged = list(untagged_list)
 
-    if rows == 0 and not untagged_list:
-        block = list(header_elements) + [
-            Paragraph("No photos in this section.", style_no_photo),
-            Spacer(1, 6),
-        ]
-        elements.append(KeepTogether(block))
-        return elements
+        # We need to decide which photos to actually show.
+        # Strategy: pair them up as before/after. Where one side is missing,
+        # try to fill with a spare untagged. Where neither exists, skip the row.
+        rows = max(len(before_list), len(after_list))
 
-    # Build comparison rows
-    comp_rows = []
-    for i in range(rows):
-        b = before_list[i] if i < len(before_list) else None
-        a = after_list[i]  if i < len(after_list)  else None
-        comp_rows.append(build_comparison_row(b, a))
+        if rows == 0:
+            # No before/after at all — nothing to show for this section
+            return elements   # skip headers too if truly empty
 
-    # Group into pairs; first group carries all the headers
+        comp_rows = []
+        for i in range(rows):
+            b = before_list[i] if i < len(before_list) else None
+            a = after_list[i]  if i < len(after_list)  else None
+
+            if b is None and a is not None:
+                # Lone After — shift to left column
+                comp_rows.append(build_single_row(a, side="left"))
+            elif b is not None and a is None:
+                # Lone Before — try to fill After slot with untagged
+                filler = spare_untagged.pop(0) if spare_untagged else None
+                if filler:
+                    comp_rows.append(build_comparison_row(b, filler))
+                else:
+                    comp_rows.append(build_single_row(b, side="left"))
+            else:
+                comp_rows.append(build_comparison_row(b, a))
+
+        # Untagged photos that weren't used as fillers — show in own rows
+        remaining_untagged = spare_untagged
+
+    else:
+        rows = max(len(before_list), len(after_list))
+
+        if rows == 0 and not untagged_list:
+            block = list(header_elements) + [
+                Paragraph("No photos in this section.", style_no_photo),
+                Spacer(1, 6),
+            ]
+            elements.append(KeepTogether(block))
+            return elements
+
+        comp_rows = []
+        for i in range(rows):
+            b = before_list[i] if i < len(before_list) else None
+            a = after_list[i]  if i < len(after_list)  else None
+            comp_rows.append(build_comparison_row(b, a))
+
+        remaining_untagged = untagged_list
+
+    # Group comparison rows; first group carries headers
     for gi, start in enumerate(range(0, len(comp_rows), ROWS_PER_GROUP)):
         group = comp_rows[start : start + ROWS_PER_GROUP]
-        # Add a small spacer between rows within the group
         spaced = []
         for row in group:
             spaced.append(row)
             spaced.append(Spacer(1, 5))
-
-        if gi == 0:
-            block = list(header_elements) + spaced
-        else:
-            block = spaced
+        block = (list(header_elements) + spaced) if gi == 0 else spaced
         elements.append(KeepTogether(block))
 
-    # Untagged photos — own sub-header, grouped the same way
-    if untagged_list:
+    # Remaining untagged rows
+    if remaining_untagged:
         untag_rows = []
-        for i in range(0, len(untagged_list), 2):
+        for i in range(0, len(remaining_untagged), 2):
             untag_rows.append(build_untagged_pair(
-                untagged_list[i],
-                untagged_list[i+1] if i+1 < len(untagged_list) else None
+                remaining_untagged[i],
+                remaining_untagged[i+1] if i+1 < len(remaining_untagged) else None
             ))
-        untag_hdr  = [
+        untag_hdr = [
             HRFlowable(width="100%", thickness=0.5, color=DIVIDER_COLOR, spaceAfter=2),
             Paragraph("Identification", style_untag_hdr),
         ]
@@ -343,11 +480,52 @@ def build_photo_section(phases_dict, header_elements):
             for row in group:
                 spaced.append(row)
                 spaced.append(Spacer(1, 5))
-            if gi == 0:
-                block = untag_hdr + spaced
-            else:
-                block = spaced
+            block = (untag_hdr + spaced) if gi == 0 else spaced
             elements.append(KeepTogether(block))
+
+    return elements
+
+
+# ============================
+# SECTION BUILDER — linear mode
+# ============================
+LINEAR_ROWS_PER_GROUP = 3   # keep 3 photos together to avoid orphans
+
+def build_photo_section_linear(phases_dict, header_elements, pdf_options=None):
+    """
+    Builds linear-layout photo rows for a section.
+    All photos run vertically in a single column; phase badge omitted.
+    """
+    pdf_options = pdf_options or {}
+    hidden_urls = pdf_options.get("hidden_photos", set())
+
+    elements = []
+
+    all_photos = []
+    for phase in ("BEFORE", "AFTER", "UNTAGGED"):
+        for p in phases_dict.get(phase, []):
+            if p.get("url") not in hidden_urls:
+                all_photos.append(p)
+
+    if not all_photos:
+        block = list(header_elements) + [
+            Paragraph("No photos in this section.", style_no_photo),
+            Spacer(1, 6),
+        ]
+        elements.append(KeepTogether(block))
+        return elements
+
+    rows = [build_linear_row(p) for p in all_photos]
+
+    for gi, start in enumerate(range(0, len(rows), LINEAR_ROWS_PER_GROUP)):
+        group = rows[start : start + LINEAR_ROWS_PER_GROUP]
+        spaced = []
+        for row in group:
+            spaced.append(row)
+            spaced.append(HRFlowable(width="100%", thickness=0.3,
+                                     color=colors.HexColor("#eeeeee"), spaceAfter=2))
+        block = (list(header_elements) + spaced) if gi == 0 else spaced
+        elements.append(KeepTogether(block))
 
     return elements
 
@@ -388,9 +566,29 @@ def special_room_divider(label):
 # ============================
 # MAIN GENERATOR
 # ============================
-def generate_pdf_report(context):
+def generate_pdf_report(context, pdf_options=None, progress_callback=None):
+    """
+    pdf_options (dict, optional):
+      layout          : "grid" (default) | "linear"
+      hide_empty_fields: True | False   (grid mode only)
+      hidden_photos   : set of photo URLs to omit
+
+    progress_callback(done, total):
+      Called after each photo is fetched so the caller can track progress.
+    """
+    pdf_options   = pdf_options or {}
+    layout        = pdf_options.get("layout", "grid")
+    hidden_urls   = set(pdf_options.get("hidden_photos", []))
+    pdf_options["hidden_photos"] = hidden_urls   # normalise to set
+
+    is_linear = (layout == "linear")
+
+    # Choose section builder
+    section_fn = build_photo_section_linear if is_linear else build_photo_section
+
     project_name = context.get("project_name", context.get("project_id", "Report"))
-    filename     = f"{project_name}_Report.pdf".replace(" ", "_")
+    suffix       = f"_{layout.capitalize()}" if layout != "grid" else ""
+    filename     = f"{project_name}_Report{suffix}.pdf".replace(" ", "_")
 
     base_dir    = os.path.dirname(os.path.abspath(__file__))
     reports_dir = os.path.join(base_dir, "static", "reports")
@@ -408,6 +606,53 @@ def generate_pdf_report(context):
     doc.project_name = project_name
     hf = make_header_footer(project_name)
     elements = []
+
+    # ── Count total photos for progress tracking ──────────────────────────────
+    data      = context["structured"]
+    sort_mode = context.get("sort_mode", "full")
+    special_data = context.get("special_rooms_structured", {})
+
+    all_photos_flat = []
+    def _collect_photos(phases_dict):
+        for phase_list in phases_dict.values():
+            for p in phase_list:
+                if p.get("url") not in hidden_urls:
+                    all_photos_flat.append(p)
+
+    if sort_mode == "full":
+        for bldg in data:
+            for unit in data[bldg]:
+                for bath in data[bldg][unit]:
+                    _collect_photos(data[bldg][unit][bath])
+    elif sort_mode == "bldg_unit_phase":
+        for bldg in data:
+            for unit in data[bldg]:
+                _collect_photos(data[bldg][unit])
+    elif sort_mode == "unit_bath_phase":
+        for unit in data:
+            for bath in data[unit]:
+                _collect_photos(data[unit][bath])
+    else:
+        for unit in data:
+            _collect_photos(data[unit])
+    for room in special_data:
+        _collect_photos(special_data[room])
+
+    total_to_fetch = len(all_photos_flat)
+    fetched_count  = [0]   # mutable counter
+
+    # Wrap fetch_image to emit progress
+    def fetch_with_progress(url, max_w, max_h):
+        img = fetch_image(url, max_w=max_w, max_h=max_h)
+        fetched_count[0] += 1
+        if progress_callback:
+            progress_callback(fetched_count[0], total_to_fetch)
+        return img
+
+    # Monkey-patch a local version so section builders use it
+    # (We store it in pdf_options and pass through; section builders call it if present)
+    pdf_options["_fetch_fn"]      = fetch_with_progress
+    pdf_options["_total_photos"]  = total_to_fetch
 
     # ---- COVER PAGE ----
     logo_path = os.path.join(base_dir, "static", "logo.png")
@@ -442,54 +687,79 @@ def generate_pdf_report(context):
         if context.get(key):
             elements.append(Paragraph(f"{label}: {context[key]}", style_meta))
 
+    # Layout badge on cover
+    layout_label = "Linear Layout" if is_linear else "Grid Layout"
+    elements.append(Spacer(1, 0.08*inch))
+    elements.append(Paragraph(layout_label, style_meta))
+
     elements.append(PageBreak())
 
-    # ---- CONTENT ----
-    data      = context["structured"]
-    sort_mode = context.get("sort_mode", "full")
+    # ── Helper to decide whether a section should be skipped in hide-empty mode ──
+    def _section_has_photos(phases_dict):
+        for phase_list in phases_dict.values():
+            for p in phase_list:
+                if p.get("url") not in hidden_urls:
+                    return True
+        return False
 
+    hide_empty = pdf_options.get("hide_empty_fields", False)
+
+    # ---- CONTENT ----
     if sort_mode == "full":
         for bldg in sorted(data):
             bldg_hdr = bldg_divider(f"Building {bldg if bldg != 'NO_BLDG' else 'Unassigned'}")
             for ui, unit in enumerate(sorted(data[bldg])):
                 unit_hdr = unit_divider(f"Unit {unit if unit != 'UNASSIGNED' else 'Unassigned'}")
                 for bi, bath in enumerate(sorted(data[bldg][unit])):
+                    phases = data[bldg][unit][bath]
+                    if hide_empty and not _section_has_photos(phases):
+                        continue
                     bath_hdr = bath_divider(f"{bath.title()} Bathroom")
                     combined = bldg_hdr + unit_hdr + bath_hdr
-                    elements += build_photo_section(data[bldg][unit][bath], combined)
-                    # Only show bldg header on the very first section
+                    elements += section_fn(phases, combined, pdf_options)
                     bldg_hdr = []
-                    unit_hdr = []   # only show unit header on first bath of unit
+                    unit_hdr = []
 
     elif sort_mode == "bldg_unit_phase":
         for bldg in sorted(data):
             bldg_hdr = bldg_divider(f"Building {bldg if bldg != 'NO_BLDG' else 'Unassigned'}")
             for unit in sorted(data[bldg]):
+                phases = data[bldg][unit]
+                if hide_empty and not _section_has_photos(phases):
+                    continue
                 unit_hdr = unit_divider(f"Unit {unit if unit != 'UNASSIGNED' else 'Unassigned'}")
                 combined = bldg_hdr + unit_hdr
-                elements += build_photo_section(data[bldg][unit], combined)
+                elements += section_fn(phases, combined, pdf_options)
                 bldg_hdr = []
 
     elif sort_mode == "unit_bath_phase":
         for unit in sorted(data):
             unit_hdr = unit_divider(f"Unit {unit if unit != 'UNASSIGNED' else 'Unassigned'}")
             for bath in sorted(data[unit]):
+                phases = data[unit][bath]
+                if hide_empty and not _section_has_photos(phases):
+                    continue
                 bath_hdr = bath_divider(f"{bath.title()} Bathroom")
                 combined = unit_hdr + bath_hdr
-                elements += build_photo_section(data[unit][bath], combined)
+                elements += section_fn(phases, combined, pdf_options)
                 unit_hdr = []
 
     else:  # unit_phase
         for unit in sorted(data):
+            phases = data[unit]
+            if hide_empty and not _section_has_photos(phases):
+                continue
             unit_hdr = unit_divider(f"Unit {unit if unit != 'UNASSIGNED' else 'Unassigned'}")
-            elements += build_photo_section(data[unit], unit_hdr)
+            elements += section_fn(phases, unit_hdr, pdf_options)
 
     # ---- SPECIAL ROOMS ----
-    special_data = context.get("special_rooms_structured", {})
     if special_data:
         for room_name in sorted(special_data):
+            phases = special_data[room_name]
+            if hide_empty and not _section_has_photos(phases):
+                continue
             room_hdr = special_room_divider(room_name)
-            elements += build_photo_section(special_data[room_name], room_hdr)
+            elements += section_fn(phases, room_hdr, pdf_options)
 
     doc.build(elements, onFirstPage=hf, onLaterPages=hf)
     print(f"[OK] PDF saved: {save_path}")

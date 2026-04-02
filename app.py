@@ -31,7 +31,7 @@ os.makedirs(REPORTS_DIR, exist_ok=True)
 
 # ─────────────────────────────────────────
 # In-memory job store
-# { job_id: { status, log, pdf_filename } }
+# { job_id: { status, log, pdf_filename, progress_done, progress_total } }
 # ─────────────────────────────────────────
 jobs = {}
 jobs_lock = threading.Lock()
@@ -39,12 +39,24 @@ work_lock = threading.Lock()
 
 
 def _new_job():
-    return {"status": "running", "log": [], "pdf_filename": None}
+    return {
+        "status":         "running",
+        "log":            [],
+        "pdf_filename":   None,
+        "progress_done":  0,
+        "progress_total": 0,
+    }
 
 
 def _log(job_id, msg):
     with jobs_lock:
         jobs[job_id]["log"].append(msg)
+
+
+def _set_progress(job_id, done, total):
+    with jobs_lock:
+        jobs[job_id]["progress_done"]  = done
+        jobs[job_id]["progress_total"] = total
 
 
 def _finish(job_id, status, pdf_filename=None):
@@ -56,29 +68,11 @@ def _finish(job_id, status, pdf_filename=None):
 
 # ─────────────────────────────────────────
 # DRAG-AND-DROP EDIT APPLICATOR
-#
-# photo_edits is a dict: { zone_id: [ordered_photo_urls] }
-# We walk the structured data and reorder (and optionally re-assign)
-# photo_data entries to match the order the user arranged in the browser.
-#
-# Strategy:
-#   1. Build a flat map: url → photo_data  (from the original structure)
-#   2. For each zone that has edits, replace its photo list with the
-#      url-ordered version from photo_edits.
-#   3. Photos whose url appears in a *different* zone than originally
-#      are effectively moved there — the original zone loses them.
 # ─────────────────────────────────────────
 def apply_photo_edits(structured, special_rooms_structured, photo_edits, sort_mode):
-    """
-    Mutates `structured` and `special_rooms_structured` in-place to reflect
-    the drag-and-drop order supplied in `photo_edits`.
-
-    photo_edits: { "zone__id__string": ["url1", "url2", ...], ... }
-    """
     if not photo_edits:
         return
 
-    # ── 1. Collect all photo_data objects keyed by URL ────────────────────────
     url_to_photo = {}
 
     def _collect(phases_dict):
@@ -106,24 +100,12 @@ def apply_photo_edits(structured, special_rooms_structured, photo_edits, sort_mo
     for room in special_rooms_structured:
         _collect(special_rooms_structured[room])
 
-    # ── 2. Parse zone IDs and apply the new order ─────────────────────────────
-    # Zone IDs are built by _zone_id() in newreport.py:
-    #   unit_phase:       "unit__<unit>__<PHASE>"
-    #   bldg_unit_phase:  "bldg__<bldg>__unit__<unit>__<PHASE>"
-    #   unit_bath_phase:  "unit__<unit>__bath__<bath>__<PHASE>"
-    #   full:             "bldg__<bldg>__unit__<unit>__bath__<bath>__<PHASE>"
-    #   special:          "special__<room>__<PHASE>"
-
     for zone_id, ordered_urls in photo_edits.items():
         parts = zone_id.split("__")
-
-        # Resolve the phases_dict for this zone
         phases_dict = None
 
         if parts[0] == "special":
-            # "special__<room>__<PHASE>"
             room = parts[1].replace("_", " ").title()
-            # fuzzy match room name (case-insensitive)
             matched_room = next(
                 (r for r in special_rooms_structured if r.lower() == room.lower()),
                 None
@@ -132,24 +114,20 @@ def apply_photo_edits(structured, special_rooms_structured, photo_edits, sort_mo
                 phases_dict = special_rooms_structured[matched_room]
                 phase = parts[2]
         elif sort_mode == "unit_phase":
-            # "unit__<unit>__<PHASE>"
             unit  = parts[1]
             phase = parts[2]
             phases_dict = structured.get(unit)
         elif sort_mode == "bldg_unit_phase":
-            # "bldg__<bldg>__unit__<unit>__<PHASE>"
             bldg  = parts[1]
             unit  = parts[3]
             phase = parts[4]
             phases_dict = structured.get(bldg, {}).get(unit)
         elif sort_mode == "unit_bath_phase":
-            # "unit__<unit>__bath__<bath>__<PHASE>"
             unit  = parts[1]
             bath  = parts[3]
             phase = parts[4]
             phases_dict = structured.get(unit, {}).get(bath)
         elif sort_mode == "full":
-            # "bldg__<bldg>__unit__<unit>__bath__<bath>__<PHASE>"
             bldg  = parts[1]
             unit  = parts[3]
             bath  = parts[5]
@@ -159,7 +137,6 @@ def apply_photo_edits(structured, special_rooms_structured, photo_edits, sort_mo
         if phases_dict is None:
             continue
 
-        # Replace this phase's list with the user-ordered photo_data objects
         new_list = []
         for url in ordered_urls:
             pd = url_to_photo.get(url)
@@ -194,13 +171,13 @@ def start_job():
     if not work_lock.acquire(blocking=False):
         return jsonify({"error": "busy"}), 429
 
-    data         = request.json
-    job_id       = str(uuid.uuid4())
-    project_id   = data.get('project_id')
-    project_name = data.get('project_name') or project_id
-    multi_bath   = data.get('multi_bath')
-    label_format = data.get('label_format')
-    bath_names   = data.get('bath_names', '').split(',')
+    data          = request.json
+    job_id        = str(uuid.uuid4())
+    project_id    = data.get('project_id')
+    project_name  = data.get('project_name') or project_id
+    multi_bath    = data.get('multi_bath')
+    label_format  = data.get('label_format')
+    bath_names    = data.get('bath_names', '').split(',')
     special_rooms = [r.strip() for r in data.get('special_rooms', '').split(',') if r.strip()]
 
     with jobs_lock:
@@ -245,15 +222,8 @@ def start_job():
             missing = analyze_missing_photos(structured)
             missing_before = missing.get("BEFORE", [])
             missing_after  = missing.get("AFTER",  [])
-            # _log(job_id, f"📊 Missing BEFORE: {len(missing_before)}")
-            # _log(job_id, f"📊 Missing AFTER: {len(missing_after)}")
-            # for loc in missing_before:
-            #     _log(job_id, f"🔴 {loc}")
-            # for loc in missing_after:
-            #     _log(job_id, f"🟡 {loc}")
             _log(job_id, "📊 MISSING PHOTO SUMMARY")
 
-            # ── BEFORE section ───────────────────────
             _log(job_id, f"🟠 Missing BEFORE photos: {len(missing_before)}")
             if missing_before:
                 _log(job_id, "   ─────────────────────")
@@ -261,9 +231,8 @@ def start_job():
                     _log(job_id, f"   • {loc}")
             else:
                 _log(job_id, "   ✓ None")
-            _log(job_id, "")  # blank line
+            _log(job_id, "")
 
-            # ── AFTER section ────────────────────────
             _log(job_id, f"🟡 Missing AFTER photos: {len(missing_after)}")
             if missing_after:
                 _log(job_id, "   ─────────────────────")
@@ -272,7 +241,7 @@ def start_job():
             else:
                 _log(job_id, "   ✓ None")
 
-            _log(job_id, "")  # blank line    
+            _log(job_id, "")
             if special_rooms_structured:
                 _log(job_id, f"🏛 Special areas: {', '.join(special_rooms_structured.keys())}")
 
@@ -305,9 +274,11 @@ def job_status(job_id):
     if not job:
         return jsonify({"error": "Job not found"}), 404
     return jsonify({
-        "status":       job["status"],
-        "log":          job["log"],
-        "pdf_filename": job.get("pdf_filename"),
+        "status":         job["status"],
+        "log":            job["log"],
+        "pdf_filename":   job.get("pdf_filename"),
+        "progress_done":  job.get("progress_done",  0),
+        "progress_total": job.get("progress_total", 0),
     })
 
 
@@ -325,8 +296,14 @@ def start_pdf_job():
     label_format  = data.get('label_format')
     bath_names    = data.get('bath_names', '').split(',')
     special_rooms = [r.strip() for r in data.get('special_rooms', '').split(',') if r.strip()]
-    # ← New: drag-and-drop edit map from the report page
-    photo_edits   = data.get('photo_edits') or {}   # { zone_id: [url, ...] }
+    photo_edits   = data.get('photo_edits') or {}
+
+    # ── New PDF customization options from the dashboard ──────────────────────
+    pdf_options = {
+        "layout":            data.get("pdf_layout", "grid"),          # "grid" | "linear"
+        "hide_empty_fields": data.get("hide_empty_fields", False),    # bool
+        "hidden_photos":     data.get("hidden_photos", []),           # list of URLs
+    }
 
     with jobs_lock:
         jobs[job_id] = _new_job()
@@ -359,20 +336,40 @@ def start_pdf_job():
             photos.sort(key=lambda p: get_sort_key(p, unit_bath_map))
             structured, special_rooms_structured = organize_photos(photos, unit_bath_map)
 
-            # ── Apply drag-and-drop edits (if any) ──────────────────────────
             if photo_edits:
                 from newreport import SORT_METHOD_KEY as SMK
-                n_edits = sum(len(v) for v in photo_edits.values())
                 _log(job_id, f"✏️ Applying {len(photo_edits)} zone edit(s) from report...")
                 apply_photo_edits(structured, special_rooms_structured, photo_edits, SMK)
             else:
                 from newreport import SORT_METHOD_KEY as SMK
 
+            # Count visible (non-hidden) photos so we can initialize the progress bar
+            hidden_set = set(pdf_options.get("hidden_photos", []))
+            visible_count = sum(
+                1 for p in photos
+                if p.get("url") and p["url"] not in hidden_set
+            )
+            _set_progress(job_id, 0, visible_count)
+            _log(job_id, f"🖼 Rendering {visible_count} photos into PDF...")
+
+            layout_label = "Linear" if pdf_options.get("layout") == "linear" else "Grid"
+            _log(job_id, f"📐 Layout: {layout_label}")
+            if pdf_options.get("hide_empty_fields"):
+                _log(job_id, "🔲 Hide empty fields: ON")
+            if hidden_set:
+                _log(job_id, f"🙈 Hiding {len(hidden_set)} photo(s) per your selection")
+
             _log(job_id, "🏗 Building PDF...")
             context = build_pdf_context(structured, photos, special_rooms_structured)
             context["structured"] = structured
             context["special_rooms_structured"] = special_rooms_structured
-            filename = generate_pdf_report(context)
+
+            # Progress callback updates the job progress fields
+            def on_progress(done, total_p):
+                _set_progress(job_id, done, total_p)
+
+            filename = generate_pdf_report(context, pdf_options=pdf_options,
+                                           progress_callback=on_progress)
 
             _log(job_id, "✅ PDF ready!")
             _finish(job_id, "complete", pdf_filename=filename)

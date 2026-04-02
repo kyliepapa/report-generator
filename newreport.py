@@ -80,34 +80,122 @@ def configure_special_rooms():
 # ============================
 # BUILDING / UNIT EXTRACTION & PARSING
 # ============================
+# Below section was commented out on April 1, 2026
+# def parse_bldg_unit(tags_clean):
+#     global label_format
+
+#     bldg = None
+#     unit = None
+
+#     for t in tags_clean:
+#         b_match = re.search(r'\b(?:BLDG|BUILDING)\s*([A-Z0-9]{1,4})\b', t, re.IGNORECASE)
+#         if b_match:
+#             val = b_match.group(1).upper()
+#             bldg = val.zfill(2) if val.isdigit() else val
+
+#     for t in tags_clean:
+#         u_match = re.search(r'\bUNIT\s*([A-Z0-9]{1,4})\b', t, re.IGNORECASE)
+#         if u_match:
+#             val = u_match.group(1).upper()
+#             unit = val.zfill(3) if val.isdigit() else val
+
+#     if bldg and unit:
+#         return bldg, unit
+
+#     letters = [t for t in tags_clean if re.fullmatch(r'[A-Z]', t)]
+#     numbers = [t for t in tags_clean if re.fullmatch(r'\d{1,4}', t)]
+#     numbers = [n.zfill(3) for n in numbers]
+
+#     if label_format == "123":
+#         if unit:
+#             return None, unit
+#         if letters:
+#             return None, letters[0]
+#         if numbers:
+#             return None, numbers[0]
+#         return None, "UNASSIGNED"
+
+#     elif label_format == "123 A":
+#         if not unit and letters:
+#             unit = letters[0]
+#         if not bldg and numbers:
+#             bldg = max(numbers)
+
+#     elif label_format == "A 123":
+#         if not bldg and letters:
+#             bldg = letters[0]
+#         if not unit and numbers:
+#             unit = min(numbers)
+
+#     if (label_format in ["123 A", "A 123"]) and not letters and len(numbers) >= 2:
+#         sorted_nums = sorted(numbers)
+#         unit = sorted_nums[0]
+#         bldg = sorted_nums[-1]
+
+#     if not unit:
+#         unit = "UNASSIGNED"
+#     if not bldg:
+#         bldg = "00"
+
+#     return bldg, unit
+
+import re
+
 def parse_bldg_unit(tags_clean):
     global label_format
 
     bldg = None
     unit = None
+    used_values = set()
 
+    # --- Explicit building ---
     for t in tags_clean:
         b_match = re.search(r'\b(?:BLDG|BUILDING)\s*([A-Z0-9]{1,4})\b', t, re.IGNORECASE)
         if b_match:
             val = b_match.group(1).upper()
             bldg = val.zfill(2) if val.isdigit() else val
+            used_values.add(val)
 
+    # --- Explicit unit ---
     for t in tags_clean:
         u_match = re.search(r'\bUNIT\s*([A-Z0-9]{1,4})\b', t, re.IGNORECASE)
         if u_match:
             val = u_match.group(1).upper()
             unit = val.zfill(3) if val.isdigit() else val
+            used_values.add(val)
 
     if bldg and unit:
         return bldg, unit
 
-    letters = [t for t in tags_clean if re.fullmatch(r'[A-Z]', t)]
-    numbers = [t for t in tags_clean if re.fullmatch(r'\d{1,4}', t)]
-    numbers = [n.zfill(3) for n in numbers]
+    # --- Token classification ---
+    letters = []
+    numbers = []
+    combos = []
 
+    for t in tags_clean:
+        t = t.upper()
+        if t in used_values:
+            continue
+
+        if re.fullmatch(r'[A-Z]', t):
+            letters.append(t)
+
+        elif re.fullmatch(r'\d{1,4}', t):
+            numbers.append(t.zfill(3))
+
+        elif re.fullmatch(r'[A-Z]\d{1,4}', t) or re.fullmatch(r'\d{1,4}[A-Z]', t):
+            combos.append(t)
+
+    # --- Helper: remove used number ---
+    def remaining_numbers(exclude=None):
+        return [n for n in numbers if n != exclude]
+
+    # --- Format logic ---
     if label_format == "123":
         if unit:
             return None, unit
+        if combos:
+            return None, combos[0]
         if letters:
             return None, letters[0]
         if numbers:
@@ -115,22 +203,44 @@ def parse_bldg_unit(tags_clean):
         return None, "UNASSIGNED"
 
     elif label_format == "123 A":
-        if not unit and letters:
-            unit = letters[0]
+        # Building prefers largest number
         if not bldg and numbers:
             bldg = max(numbers)
 
+        # Unit priority: combo > letter > remaining number
+        if not unit:
+            if combos:
+                unit = combos[0]
+            elif letters:
+                unit = letters[0]
+            else:
+                rem = remaining_numbers(bldg)
+                if rem:
+                    unit = min(rem)
+
     elif label_format == "A 123":
+        # Building prefers letter
         if not bldg and letters:
             bldg = letters[0]
-        if not unit and numbers:
-            unit = min(numbers)
 
-    if (label_format in ["123 A", "A 123"]) and not letters and len(numbers) >= 2:
+        # Unit priority: combo > number > remaining letter
+        if not unit:
+            if combos:
+                unit = combos[0]
+            elif numbers:
+                unit = min(numbers)
+            else:
+                rem_letters = [l for l in letters if l != bldg]
+                if rem_letters:
+                    unit = rem_letters[0]
+
+    # --- All-number fallback ---
+    if (label_format in ["123 A", "A 123"]) and not letters and not combos and len(numbers) >= 2:
         sorted_nums = sorted(numbers)
         unit = sorted_nums[0]
         bldg = sorted_nums[-1]
 
+    # --- Defaults ---
     if not unit:
         unit = "UNASSIGNED"
     if not bldg:
@@ -602,6 +712,143 @@ document.addEventListener('keydown', function(e) {
 </script>
 """
 
+# ── PDF Customization Dashboard CSS ──────────────────────────────────────────────────────────
+PDF_DASHBOARD_CSS = """
+/* ── PDF DASHBOARD MODAL ── */
+.pdf-modal-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.72); z-index: 10000;
+    align-items: center; justify-content: center; padding: 20px;
+}
+.pdf-modal-overlay.active { display: flex; }
+.pdf-modal {
+    background: #ffffff; border-radius: 16px;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.35);
+    width: 100%; max-width: 680px; max-height: 92vh; overflow-y: auto;
+    font-family: 'Segoe UI', system-ui, sans-serif; color: #1a2535;
+}
+.pdf-modal-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 22px 28px 18px; border-bottom: 1px solid #e8ecf4;
+    position: sticky; top: 0; background: white; z-index: 1;
+    border-radius: 16px 16px 0 0;
+}
+.pdf-modal-title { font-size: 17px; font-weight: 700; color: #1a2535; letter-spacing: -0.2px; }
+.pdf-modal-close {
+    background: none; border: none; font-size: 22px; color: #8899aa;
+    cursor: pointer; line-height: 1; padding: 2px 6px; border-radius: 6px;
+    transition: background 0.15s, color 0.15s;
+}
+.pdf-modal-close:hover { background: #f0f3f8; color: #1a2535; }
+.pdf-modal-body { padding: 24px 28px; display: flex; flex-direction: column; gap: 28px; }
+ 
+.pdf-section-label {
+    font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.9px; color: #8899aa; margin-bottom: 12px;
+}
+ 
+/* Layout selector */
+.layout-options { display: flex; gap: 14px; }
+.layout-btn {
+    flex: 1; border: 2px solid #dde3ed; border-radius: 12px;
+    padding: 14px 12px 12px; cursor: pointer; background: #fafbfd;
+    transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
+    display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center;
+}
+.layout-btn:hover { border-color: #aac4e8; background: #f4f8ff; }
+.layout-btn.selected {
+    border-color: #2e86de; background: #f0f7ff;
+    box-shadow: 0 0 0 4px rgba(46,134,222,0.12);
+}
+.layout-btn img {
+    width: 100%; max-width: 240px; height: 130px; object-fit: cover;
+    border-radius: 8px; border: 1px solid #e0e6f0; display: block;
+}
+.layout-btn-label { font-size: 14px; font-weight: 700; color: #1a2535; }
+.layout-btn-desc  { font-size: 11.5px; color: #8899aa; line-height: 1.4; margin-top: -4px; }
+.layout-btn.selected .layout-btn-label { color: #2e86de; }
+ 
+/* Option row (checkbox) */
+.pdf-option-row {
+    display: flex; align-items: center; gap: 11px; padding: 12px 16px;
+    border-radius: 10px; background: #f6f8fc; border: 1px solid #e8ecf4;
+    cursor: pointer; transition: background 0.15s, border-color 0.15s; user-select: none;
+}
+.pdf-option-row:hover { background: #eef3fb; border-color: #c8d8ec; }
+.pdf-option-row input[type=checkbox] {
+    width: 17px; height: 17px; accent-color: #2e86de; cursor: pointer; flex-shrink: 0;
+}
+.pdf-option-row-text  { display: flex; flex-direction: column; gap: 2px; }
+.pdf-option-row-title { font-size: 13.5px; font-weight: 600; color: #1a2535; }
+.pdf-option-row-hint  { font-size: 11.5px; color: #8899aa; line-height: 1.4; }
+ 
+/* Photo hide button */
+#pdfHidePhotosBtn {
+    padding: 9px 20px; border-radius: 20px; border: 2px solid #2e86de;
+    background: transparent; color: #2e86de; font-size: 13px; font-weight: 700;
+    cursor: pointer; transition: all 0.18s; white-space: nowrap;
+}
+#pdfHidePhotosBtn:hover { background: #2e86de; color: white; }
+#pdfHidePhotosBtn.selecting { background: #2e86de; color: white; }
+.photo-hide-count { font-size: 12px; color: #8899aa; margin-top: 8px; min-height: 18px; }
+.photo-hide-count.has-hidden { color: #e67e22; font-weight: 600; }
+ 
+/* Photo select mode */
+body.pdf-select-mode .photo-card { position: relative; cursor: pointer; }
+body.pdf-select-mode .photo-card img { cursor: pointer; }
+body.pdf-select-mode .photo-card::after {
+    content: ''; position: absolute; inset: 0; border-radius: 8px;
+    transition: background 0.15s; pointer-events: none;
+}
+body.pdf-select-mode .photo-card:hover::after { background: rgba(46,134,222,0.08); }
+.pdf-hide-checkbox {
+    display: none; position: absolute; top: 8px; right: 8px;
+    width: 22px; height: 22px; accent-color: #e74c3c;
+    cursor: pointer; z-index: 20; border-radius: 4px;
+}
+body.pdf-select-mode .pdf-hide-checkbox { display: block; }
+body.pdf-select-mode .photo-card.pdf-hidden-selected img { opacity: 0.38; filter: grayscale(60%); }
+body.pdf-select-mode .photo-card.pdf-hidden-selected::after {
+    background: rgba(231,76,60,0.12);
+    box-shadow: inset 0 0 0 2px rgba(231,76,60,0.5);
+    border-radius: 8px;
+}
+ 
+/* Progress */
+.pdf-progress-section { display: none; flex-direction: column; gap: 10px; }
+.pdf-progress-section.visible { display: flex; }
+.pdf-progress-bar-wrap { background: #e8ecf4; border-radius: 8px; height: 10px; overflow: hidden; }
+.pdf-progress-bar-fill {
+    background: linear-gradient(90deg, #2e86de, #10ac84);
+    height: 100%; width: 0%; border-radius: 8px; transition: width 0.4s ease;
+}
+.pdf-progress-label { font-size: 12.5px; color: #636e72; display: flex; justify-content: space-between; align-items: center; }
+.pdf-progress-status { font-weight: 600; color: #2e86de; }
+ 
+/* Footer */
+.pdf-modal-footer {
+    padding: 18px 28px 24px; border-top: 1px solid #e8ecf4;
+    display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+    background: #fafbfd; border-radius: 0 0 16px 16px;
+    position: sticky; bottom: 0;
+}
+#pdfGenerateBtn {
+    padding: 12px 30px; background: #2e86de; color: white; border: none;
+    border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer;
+    transition: background 0.2s, transform 0.15s; letter-spacing: 0.2px;
+    display: flex; align-items: center; gap: 8px;
+}
+#pdfGenerateBtn:hover:not(:disabled) { background: #2170c2; transform: translateY(-1px); }
+#pdfGenerateBtn:disabled { background: #a0b8d8; cursor: not-allowed; transform: none; }
+.pdf-open-link {
+    color: #2e86de; font-size: 13px; font-weight: 600; text-decoration: none;
+    padding: 10px 18px; border: 1.5px solid #2e86de; border-radius: 10px;
+    transition: background 0.15s; display: none;
+}
+.pdf-open-link:hover { background: #f0f7ff; }
+.pdf-open-link.visible { display: inline-flex; align-items: center; gap: 6px; }
+"""
+
 # ── Drag-and-Drop CSS ──────────────────────────────────────────────────────────
 DRAG_DROP_CSS = """
     /* ── EDIT MODE TOOLBAR ── */
@@ -1002,12 +1249,292 @@ refreshZones();
 </script>
 """
 
-# ── Updated PDF_PROGRESS_JS: sends current DOM order to the server ─────────────
+# ── Updated PDF_PROGRESS_JS: dashboard controller + progress polling ──────────
 PDF_PROGRESS_JS = """
 <script>
+// ============================================================
+// PDF DASHBOARD CONTROLLER
+// ============================================================
+ 
+// ── State ────────────────────────────────────────────────────
+let _pdfLayout        = 'grid';
+let _hideEmptyFields  = false;
+let _hiddenPhotoUrls  = new Set();   // persists across open/close of modal
+let _photoSelectMode  = false;
+let _tempHiddenUrls   = new Set();   // working copy while in select mode
+ 
+// ── Open / Close modal ───────────────────────────────────────
+function openPdfDashboard() {
+    document.getElementById('pdfDashboardOverlay').classList.add('active');
+    document.getElementById('hideEmptyCheck').checked = _hideEmptyFields;
+    refreshHideCount();
+    if (_photoSelectMode) endPhotoSelectMode(false);
+}
+ 
+function closePdfDashboard(e) {
+    if (e && e.target !== document.getElementById('pdfDashboardOverlay')) return;
+    if (_photoSelectMode) endPhotoSelectMode(false);
+    document.getElementById('pdfDashboardOverlay').classList.remove('active');
+}
+ 
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        if (_photoSelectMode) { endPhotoSelectMode(false); return; }
+        document.getElementById('pdfDashboardOverlay').classList.remove('active');
+    }
+});
+ 
+// ── Layout selection ─────────────────────────────────────────
+function selectLayout(layout) {
+    _pdfLayout = layout;
+    document.getElementById('layoutBtnGrid').classList.toggle('selected',   layout === 'grid');
+    document.getElementById('layoutBtnLinear').classList.toggle('selected', layout === 'linear');
+    document.getElementById('hideEmptyRow').style.display = layout === 'grid' ? '' : 'none';
+}
+ 
+// ── Hide-empty checkbox ──────────────────────────────────────
+document.getElementById('hideEmptyCheck').addEventListener('change', function() {
+    _hideEmptyFields = this.checked;
+});
+ 
+// ── Photo selection mode ─────────────────────────────────────
+function togglePhotoSelectMode() {
+    if (!_photoSelectMode) {
+        startPhotoSelectMode();
+    } else {
+        endPhotoSelectMode(true);
+    }
+}
+ 
+function startPhotoSelectMode() {
+    _photoSelectMode = true;
+    _tempHiddenUrls  = new Set(_hiddenPhotoUrls);
+ 
+    // Close modal so user can see report
+    document.getElementById('pdfDashboardOverlay').classList.remove('active');
+ 
+    document.querySelectorAll('.photo-card').forEach(card => {
+        const img = card.querySelector('img');
+        if (!img) return;
+ 
+        let cb = card.querySelector('.pdf-hide-checkbox');
+        if (!cb) {
+            cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.className = 'pdf-hide-checkbox';
+            cb.addEventListener('change', function(e) {
+                e.stopPropagation();
+                const url = card.querySelector('img').src;
+                if (this.checked) {
+                    _tempHiddenUrls.add(url);
+                    card.classList.add('pdf-hidden-selected');
+                } else {
+                    _tempHiddenUrls.delete(url);
+                    card.classList.remove('pdf-hidden-selected');
+                }
+                refreshSelectModeCount();
+            });
+            card.appendChild(cb);
+        }
+ 
+        const url = img.src;
+        if (_hiddenPhotoUrls.has(url)) {
+            cb.checked = true;
+            card.classList.add('pdf-hidden-selected');
+        } else {
+            cb.checked = false;
+            card.classList.remove('pdf-hidden-selected');
+        }
+ 
+        card._pdfClickHandler = function(e) {
+            if (e.target === cb) return;
+            cb.checked = !cb.checked;
+            cb.dispatchEvent(new Event('change'));
+        };
+        card.addEventListener('click', card._pdfClickHandler);
+    });
+ 
+    document.body.classList.add('pdf-select-mode');
+ 
+    const btn = document.getElementById('pdfHidePhotosBtn');
+    btn.textContent = '💾 Save Selections';
+    btn.classList.add('selecting');
+ 
+    showSelectModeBanner();
+    refreshSelectModeCount();
+}
+ 
+function endPhotoSelectMode(save) {
+    _photoSelectMode = false;
+ 
+    if (save) {
+        _hiddenPhotoUrls = new Set(_tempHiddenUrls);
+    }
+ 
+    document.querySelectorAll('.photo-card').forEach(card => {
+        card.classList.remove('pdf-hidden-selected');
+        if (card._pdfClickHandler) {
+            card.removeEventListener('click', card._pdfClickHandler);
+            delete card._pdfClickHandler;
+        }
+    });
+ 
+    document.body.classList.remove('pdf-select-mode');
+ 
+    const btn = document.getElementById('pdfHidePhotosBtn');
+    btn.textContent = '🙈 Select Photos to Hide';
+    btn.classList.remove('selecting');
+ 
+    removeSelectModeBanner();
+    refreshHideCount();
+    document.getElementById('pdfDashboardOverlay').classList.add('active');
+}
+ 
+// ── Floating banner while selecting ─────────────────────────
+let _banner = null;
+ 
+function showSelectModeBanner() {
+    if (_banner) return;
+    _banner = document.createElement('div');
+    _banner.id = 'pdfSelectBanner';
+    _banner.style.cssText = `
+        position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+        background: #1a2535; color: white; padding: 13px 28px; border-radius: 40px;
+        font-size: 13.5px; font-weight: 600; z-index: 10001;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.35);
+        display: flex; align-items: center; gap: 16px; white-space: nowrap;
+    `;
+    _banner.innerHTML = `
+        <span id="bannerCount">Click photos to hide them from the PDF</span>
+        <button onclick="endPhotoSelectMode(true)" style="
+            background:#2e86de; color:white; border:none; padding:7px 16px;
+            border-radius:20px; font-size:12px; font-weight:700; cursor:pointer;">
+            💾 Save
+        </button>
+        <button onclick="endPhotoSelectMode(false)" style="
+            background:rgba(255,255,255,0.12); color:white; border:none; padding:7px 14px;
+            border-radius:20px; font-size:12px; cursor:pointer;">
+            Cancel
+        </button>
+    `;
+    document.body.appendChild(_banner);
+}
+ 
+function removeSelectModeBanner() {
+    if (_banner) { _banner.remove(); _banner = null; }
+}
+ 
+function refreshSelectModeCount() {
+    const n = _tempHiddenUrls.size;
+    const el = document.getElementById('bannerCount');
+    if (el) {
+        el.textContent = n === 0
+            ? 'Click photos to hide them from the PDF'
+            : `${n} photo${n !== 1 ? 's' : ''} selected to hide`;
+    }
+}
+ 
+function refreshHideCount() {
+    const el = document.getElementById('photoHideCount');
+    if (!el) return;
+    const n = _hiddenPhotoUrls.size;
+    if (n === 0) {
+        el.textContent = '';
+        el.className = 'photo-hide-count';
+    } else {
+        el.textContent = `${n} photo${n !== 1 ? 's' : ''} will be hidden`;
+        el.className = 'photo-hide-count has-hidden';
+    }
+}
+ 
+// ── PDF generation ────────────────────────────────────────────
+function startPdfGeneration() {
+    const params      = new URLSearchParams(window.location.search);
+    const generateBtn = document.getElementById('pdfGenerateBtn');
+    const progressSec = document.getElementById('pdfProgressSection');
+    const fill        = document.getElementById('pdfProgressFill');
+    const statusText  = document.getElementById('pdfProgressText');
+    const statusPct   = document.getElementById('pdfProgressPct');
+    const openLink    = document.getElementById('pdfOpenLink');
+ 
+    const photoEdits = (typeof _editCount !== 'undefined' && _editCount > 0)
+        ? collectPhotoEdits() : null;
+ 
+    generateBtn.disabled    = true;
+    generateBtn.textContent = '⏳ Generating…';
+    progressSec.classList.add('visible');
+    fill.style.width        = '0%';
+    fill.style.background   = 'linear-gradient(90deg, #2e86de, #10ac84)';
+    statusText.textContent  = 'Starting…';
+    statusPct.textContent   = '';
+    openLink.classList.remove('visible');
+ 
+    fetch('/start_pdf_job', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            project_id:         params.get('project_id'),
+            project_name:       params.get('project_name'),
+            multi_bath:         params.get('multi_bath'),
+            label_format:       params.get('label_format'),
+            bath_names:         params.get('bath_names'),
+            special_rooms:      params.get('special_rooms'),
+            photo_edits:        photoEdits,
+            // ── Dashboard options ──────────────────────────
+            pdf_layout:         _pdfLayout,
+            hide_empty_fields:  _hideEmptyFields,
+            hidden_photos:      Array.from(_hiddenPhotoUrls),
+        }),
+    })
+    .then(r => r.json())
+    .then(({ job_id }) => {
+        const interval = setInterval(() => {
+            fetch(`/job_status/${job_id}`)
+                .then(r => r.json())
+                .then(data => {
+                    // ── Accurate progress based on photos rendered ──
+                    const done  = data.progress_done  || 0;
+                    const total = data.progress_total || 0;
+ 
+                    if (total > 0) {
+                        const pct = Math.min(Math.round((done / total) * 100), 99);
+                        fill.style.width       = pct + '%';
+                        statusText.textContent = `Rendering photo ${done} of ${total}…`;
+                        statusPct.textContent  = pct + '%';
+                    } else {
+                        // Indeterminate crawl while fetching/tagging
+                        const current = parseFloat(fill.style.width) || 0;
+                        if (current < 28) fill.style.width = (current + 1.5) + '%';
+                        statusText.textContent = 'Fetching & tagging photos…';
+                    }
+ 
+                    if (data.status === 'complete') {
+                        clearInterval(interval);
+                        fill.style.width       = '100%';
+                        statusText.textContent = '✅ PDF ready!';
+                        statusPct.textContent  = '100%';
+                        generateBtn.textContent = '⬇ Generate PDF';
+                        generateBtn.disabled    = false;
+                        openLink.href = `/reports/${data.pdf_filename}`;
+                        openLink.classList.add('visible');
+                    }
+ 
+                    if (data.status === 'error') {
+                        clearInterval(interval);
+                        fill.style.background  = '#e74c3c';
+                        fill.style.width       = '100%';
+                        statusText.textContent = '❌ Error generating PDF';
+                        statusPct.textContent  = '';
+                        generateBtn.textContent = '⬇ Generate PDF';
+                        generateBtn.disabled    = false;
+                    }
+                });
+        }, 2000);
+    });
+}
+ 
+// collectPhotoEdits — used by drag-and-drop AND by the PDF dashboard
 function collectPhotoEdits() {
-    // Walk every photo-grid in DOM order and record [zoneId → [orderedPhotoUrls]]
-    // The zone id is the data-zone attribute set on each .photo-grid
     const edits = {};
     document.querySelectorAll('.photo-grid[data-zone]').forEach(grid => {
         const zoneId = grid.dataset.zone;
@@ -1016,77 +1543,97 @@ function collectPhotoEdits() {
     });
     return edits;
 }
-
-function generatePDF() {
-    const params = new URLSearchParams(window.location.search);
-    const btn    = document.getElementById('pdfBtn');
-    const status = document.getElementById('pdfStatus');
-    const bar    = document.getElementById('pdfProgressBar');
-    const barWrap= document.getElementById('pdfProgressWrap');
-
-    btn.disabled = true;
-    btn.textContent = "Generating...";
-    barWrap.style.display = "block";
-    bar.style.width = "0%";
-    status.textContent = "Starting...";
-
-    const photoEdits = _editCount > 0 ? collectPhotoEdits() : null;
-
-    fetch('/start_pdf_job', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            project_id:   params.get("project_id"),
-            project_name: params.get("project_name"),
-            multi_bath:   params.get("multi_bath"),
-            label_format: params.get("label_format"),
-            bath_names:   params.get("bath_names"),
-            special_rooms:params.get("special_rooms"),
-            photo_edits:  photoEdits,   // ← drag-and-drop order, or null
-        }),
-    })
-    .then(res => res.json())
-    .then(({ job_id }) => {
-        const interval = setInterval(() => {
-            fetch(`/job_status/${job_id}`)
-                .then(res => res.json())
-                .then(data => {
-                    if (data.status === "complete") {
-                        clearInterval(interval);
-                        bar.style.width = "100%";
-                        status.textContent = _editCount > 0
-                            ? "✅ PDF ready! (" + _editCount + " edit" + (_editCount!==1?'s':'') + " applied)"
-                            : "✅ PDF ready!";
-                        btn.textContent = "Open PDF";
-                        btn.disabled = false;
-                        btn.onclick = () => window.open(`/reports/${data.pdf_filename}`, "_blank");
-                    }
-                    if (data.status === "error") {
-                        clearInterval(interval);
-                        status.textContent = "❌ Error generating PDF";
-                        btn.textContent = "Try Again";
-                        btn.disabled = false;
-                        btn.onclick = generatePDF;
-                    }
-                });
-        }, 2000);
-    });
-}
 </script>
 """
 
 PDF_BUTTON_HTML = """
-<button id="pdfBtn" onclick="generatePDF()" style="
+<button id="pdfDashboardBtn" onclick="openPdfDashboard()" style="
     margin-top:16px; padding:11px 26px; font-size:15px;
     background:#3498db; color:white; border:none; border-radius:8px; cursor:pointer;
-    font-weight:600; transition:background 0.2s;">
-    ⬇ Download PDF
+    font-weight:600; transition:background 0.2s; display:inline-flex; align-items:center; gap:8px;">
+    ⚙️ Customize &amp; Export PDF
 </button>
-<div id="pdfProgressWrap" style="display:none; margin-top:14px; width:320px;">
-    <div style="background:#e0e0e0; border-radius:6px; height:10px; overflow:hidden;">
-        <div id="pdfProgressBar" style="background:#3498db; height:100%; width:0%; transition:width 0.4s ease; border-radius:6px;"></div>
+ 
+<!-- ═══════════════════════════════════════════
+     PDF CUSTOMIZATION DASHBOARD MODAL
+     ═══════════════════════════════════════════ -->
+<div class="pdf-modal-overlay" id="pdfDashboardOverlay" onclick="closePdfDashboard(event)">
+  <div class="pdf-modal" onclick="event.stopPropagation()">
+ 
+    <div class="pdf-modal-header">
+      <span class="pdf-modal-title">📄 PDF Export Options</span>
+      <button class="pdf-modal-close" onclick="closePdfDashboard()">&#x2715;</button>
     </div>
-    <div id="pdfStatus" style="margin-top:8px; font-size:13px; color:#555;"></div>
+ 
+    <div class="pdf-modal-body">
+ 
+      <!-- 1. Layout -->
+      <div>
+        <div class="pdf-section-label">Layout Style</div>
+        <div class="layout-options">
+          <div class="layout-btn selected" id="layoutBtnGrid" onclick="selectLayout('grid')">
+            <img src="/static/layout_grid.png" alt="Grid layout preview"
+                 onerror="this.style.display='none'">
+            <div>
+              <div class="layout-btn-label">Grid</div>
+              <div class="layout-btn-desc">Before &amp; After side-by-side,<br>2 rows per page</div>
+            </div>
+          </div>
+          <div class="layout-btn" id="layoutBtnLinear" onclick="selectLayout('linear')">
+            <img src="/static/layout_linear.png" alt="Linear layout preview"
+                 onerror="this.style.display='none'">
+            <div>
+              <div class="layout-btn-label">Linear</div>
+              <div class="layout-btn-desc">Single column, 3–4 photos<br>per page with metadata</div>
+            </div>
+          </div>
+        </div>
+      </div>
+ 
+      <!-- 2. Hide empty fields (grid only) -->
+      <div id="hideEmptyRow">
+        <label class="pdf-option-row" for="hideEmptyCheck">
+          <input type="checkbox" id="hideEmptyCheck">
+          <div class="pdf-option-row-text">
+            <span class="pdf-option-row-title">Hide Empty Fields</span>
+            <span class="pdf-option-row-hint">Skips sections with no photos. Lone After photos shift left; gaps may be filled by untagged photos.</span>
+          </div>
+        </label>
+      </div>
+ 
+      <!-- 3. Select photos to hide -->
+      <div>
+        <div class="pdf-section-label">Photo Visibility</div>
+        <button id="pdfHidePhotosBtn" onclick="togglePhotoSelectMode()">
+          🙈 Select Photos to Hide
+        </button>
+        <div class="photo-hide-count" id="photoHideCount"></div>
+      </div>
+ 
+      <!-- 4. Progress (shown during generation) -->
+      <div class="pdf-progress-section" id="pdfProgressSection">
+        <div class="pdf-section-label">Generation Progress</div>
+        <div class="pdf-progress-bar-wrap">
+          <div class="pdf-progress-bar-fill" id="pdfProgressFill"></div>
+        </div>
+        <div class="pdf-progress-label">
+          <span id="pdfProgressText">Preparing…</span>
+          <span class="pdf-progress-status" id="pdfProgressPct"></span>
+        </div>
+      </div>
+ 
+    </div>
+ 
+    <div class="pdf-modal-footer">
+      <a class="pdf-open-link" id="pdfOpenLink" href="" target="_blank">
+        ↗ Open PDF
+      </a>
+      <button id="pdfGenerateBtn" onclick="startPdfGeneration()">
+        ⬇ Generate PDF
+      </button>
+    </div>
+ 
+  </div>
 </div>
 """
 
@@ -1253,7 +1800,7 @@ def _make_head(title):
     return f"""<!DOCTYPE html><html><head>
     <title>{title} — Report</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>{make_shared_css()}{LIGHTBOX_CSS}{DRAG_DROP_CSS}</style>
+    <style>{make_shared_css()}{LIGHTBOX_CSS}{DRAG_DROP_CSS}{PDF_DASHBOARD_CSS}</style>
     </head><body>
     {DND_TOOLBAR_HTML}
     {LIGHTBOX_HTML}"""
