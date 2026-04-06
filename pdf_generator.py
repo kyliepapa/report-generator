@@ -42,7 +42,7 @@ IMG_H = 3.05 * inch
 # ============================
 LINEAR_PHOTO_W   = CONTENT_W * 0.58
 LINEAR_CAPTION_W = CONTENT_W * 0.42
-LINEAR_IMG_H     = 2.1 * inch
+LINEAR_IMG_H     = 1.55 * inch
 LINEAR_IMG_W     = LINEAR_PHOTO_W
 
 # ============================
@@ -255,10 +255,16 @@ def build_comparison_row(before_photo, after_photo):
 # ============================
 # SINGLE-PHOTO ROW — grid mode
 # ============================
-def build_single_row(photo, side="left"):
-    col   = build_photo_col(photo,
-                            BEFORE_COLOR if side == "left" else AFTER_COLOR,
-                            "BEFORE" if side == "left" else "AFTER", side)
+def build_single_row(photo, side="left", phase_label=None):
+    # Renders one photo occupying one half of the two-column grid row,
+    # leaving the other half blank.
+
+    # phase_label – if supplied, overrides the default badge text so that an
+    #             AFTER photo shifted into the left column still reads "AFTER".
+    default_label = "BEFORE" if side == "left" else "AFTER"
+    label = phase_label if phase_label else default_label
+    color = BEFORE_COLOR if label == "BEFORE" else AFTER_COLOR
+    col   = build_photo_col(photo, color, label, side)
     blank = [Spacer(1, IMG_H)]
     data  = [col, blank] if side == "left" else [blank, col]
     tbl   = Table([data], colWidths=[IMG_W, IMG_W])
@@ -291,6 +297,70 @@ def build_untagged_pair(photo_left, photo_right=None):
         ("LINEAFTER",    (0,0),(0,-1),  0.75, DIVIDER_COLOR),
     ]))
     return tbl
+
+def collect_id_photos(phases_dict, hidden_urls):
+    # Returns all photos that should be rendered with the IDENTIFICATION badge:
+    # the UNTAGGED bucket of any phases_dict (OTHER or real bathroom).
+    # Respects the hidden_urls exclusion set.
+    return [
+        p for p in phases_dict.get("UNTAGGED", [])
+        if p.get("url") not in hidden_urls
+    ]
+
+def build_id_section(id_photos, header_elements=None, pdf_options=None):
+    """
+    Renders identification photos two-per-row using the same build_untagged_pair
+    layout.  Attaches header_elements to the first group only.
+    header_elements is typically [] (no extra heading; ID photos just continue
+    after the last real bathroom of the unit).
+    """
+    if not id_photos:
+        return []
+    pdf_options = pdf_options or {}
+    elements    = []
+    header_elements = list(header_elements or [])
+
+    rows = []
+    for i in range(0, len(id_photos), 2):
+        rows.append(build_untagged_pair(
+            id_photos[i],
+            id_photos[i + 1] if i + 1 < len(id_photos) else None
+        ))
+
+    for gi, start in enumerate(range(0, len(rows), ROWS_PER_GROUP)):
+        group  = rows[start : start + ROWS_PER_GROUP]
+        spaced = []
+        for row in group:
+            spaced.append(row)
+            spaced.append(Spacer(1, 5))
+        block = (header_elements + spaced) if gi == 0 else spaced
+        elements.append(KeepTogether(block))
+
+    return elements
+
+def build_id_section_linear(id_photos, header_elements=None, pdf_options=None):
+    """
+    Linear-mode equivalent of build_id_section.
+    """
+    if not id_photos:
+        return []
+    pdf_options = pdf_options or {}
+    elements    = []
+    header_elements = list(header_elements or [])
+
+    rows = [build_linear_row(p) for p in id_photos]
+
+    for gi, start in enumerate(range(0, len(rows), LINEAR_ROWS_PER_GROUP)):
+        group  = rows[start : start + LINEAR_ROWS_PER_GROUP]
+        spaced = []
+        for row in group:
+            spaced.append(row)
+            spaced.append(HRFlowable(width="100%", thickness=0.3,
+                                    color=colors.HexColor("#eeeeee"), spaceAfter=2))
+        block = (header_elements + spaced) if gi == 0 else spaced
+        elements.append(KeepTogether(block))
+
+    return elements
 
 
 # ============================
@@ -339,19 +409,24 @@ def build_photo_section(phases_dict, header_elements, pdf_options=None):
         spare_untagged = list(untagged_list)
         rows = max(len(before_list), len(after_list))
         if rows == 0:
-            return elements
-        comp_rows = []
+            # Even with hide_empty, still render any UNTAGGED/ID photos
+            if not untagged_list:
+                return elements
+            # Fall through — comp_rows will be empty, remaining_untagged will render
+            comp_rows = []
         for i in range(rows):
-            b = before_list[i] if i < len(before_list) else None
-            a = after_list[i]  if i < len(after_list)  else None
-            if b is None and a is not None:
-                comp_rows.append(build_single_row(a, side="left"))
-            elif b is not None and a is None:
-                filler = spare_untagged.pop(0) if spare_untagged else None
-                comp_rows.append(build_comparison_row(b, filler) if filler
-                                 else build_single_row(b, side="left"))
-            else:
-                comp_rows.append(build_comparison_row(b, a))
+            for i in range(rows):
+                b = before_list[i] if i < len(before_list) else None
+                a = after_list[i]  if i < len(after_list)  else None
+                if b is None and a is not None:
+                    # Only an AFTER photo — shift it left but keep the AFTER badge
+                    comp_rows.append(build_single_row(a, side="left", phase_label="AFTER"))
+                elif b is not None and a is None:
+                    filler = spare_untagged.pop(0) if spare_untagged else None
+                    comp_rows.append(build_comparison_row(b, filler) if filler
+                                    else build_single_row(b, side="left", phase_label="BEFORE"))
+                else:
+                    comp_rows.append(build_comparison_row(b, a))
         remaining_untagged = spare_untagged
     else:
         rows = max(len(before_list), len(after_list))
@@ -405,24 +480,35 @@ def build_photo_section(phases_dict, header_elements, pdf_options=None):
 # ============================
 # SECTION BUILDER — linear mode
 # ============================
-LINEAR_ROWS_PER_GROUP = 3
+LINEAR_ROWS_PER_GROUP = 4
 
 def build_photo_section_linear(phases_dict, header_elements, pdf_options=None):
     pdf_options = pdf_options or {}
     hidden_urls = pdf_options.get("hidden_photos", set())
+    hide_empty  = pdf_options.get("hide_empty_fields", False)
     elements    = []
     all_photos  = []
     for phase in ("BEFORE", "AFTER", "UNTAGGED"):
         for p in phases_dict.get(phase, []):
             if p.get("url") not in hidden_urls:
                 all_photos.append(p)
+
     if not all_photos:
+        # When hide_empty is on (or the section is genuinely empty after
+        # filtering), return nothing — no placeholder row.
+        #Just me rigging the system real quick, don't mind me:
+        hide_empty = True
+        if hide_empty:
+            return elements
+        # hide_empty is off: render the "No photos" placeholder so the
+        # section heading still appears and the user knows the slot exists.
         block = list(header_elements) + [
             Paragraph("No photos in this section.", style_no_photo),
             Spacer(1, 6),
         ]
         elements.append(KeepTogether(block))
         return elements
+
     rows = [build_linear_row(p) for p in all_photos]
     for gi, start in enumerate(range(0, len(rows), LINEAR_ROWS_PER_GROUP)):
         group  = rows[start : start + LINEAR_ROWS_PER_GROUP]
@@ -430,7 +516,7 @@ def build_photo_section_linear(phases_dict, header_elements, pdf_options=None):
         for row in group:
             spaced.append(row)
             spaced.append(HRFlowable(width="100%", thickness=0.3,
-                                     color=colors.HexColor("#eeeeee"), spaceAfter=2))
+                                    color=colors.HexColor("#eeeeee"), spaceAfter=2))
         block = (list(header_elements) + spaced) if gi == 0 else spaced
         elements.append(KeepTogether(block))
     return elements
@@ -671,15 +757,34 @@ def generate_pdf_report(context, pdf_options=None, progress_callback=None):
             bldg_hdr = bldg_divider(f"Building {bldg if bldg != 'NO_BLDG' else 'Unassigned'}")
             for ui, unit in enumerate(sorted(data[bldg])):
                 unit_hdr = unit_divider(f"Unit {unit if unit != 'UNASSIGNED' else 'Unassigned'}")
-                for bi, bath in enumerate(sorted(data[bldg][unit])):
+                unit_id_photos = []   # accumulated across all baths in this unit
+
+                real_baths = [b for b in sorted(data[bldg][unit]) if b != "OTHER"]
+                for bath in real_baths:
                     phases = data[bldg][unit][bath]
-                    if hide_empty and not _section_has_photos(phases):
+                    # Collect UNTAGGED from every real bathroom too
+                    unit_id_photos.extend(collect_id_photos(phases, hidden_urls))
+                    # Build a stripped phases dict (BEFORE + AFTER only) for the main section
+                    clean_phases = {k: v for k, v in phases.items() if k in ("BEFORE", "AFTER")}
+                    if hide_empty and not _section_has_photos(clean_phases):
                         continue
                     bath_hdr = bath_divider(f"{bath.title()} Bathroom")
                     combined = bldg_hdr + unit_hdr + bath_hdr
-                    elements += section_fn(phases, combined, pdf_options)
+                    elements += section_fn(clean_phases, combined, pdf_options)
                     bldg_hdr = []
                     unit_hdr = []
+
+            # Collect everything from the OTHER bathroom (if present)
+            if "OTHER" in data[bldg][unit]:
+                other_phases = data[bldg][unit]["OTHER"]
+                for phase_list in other_phases.values():
+                    unit_id_photos.extend(
+                        p for p in phase_list if p.get("url") not in hidden_urls
+                    )
+
+            # Emit the ID block (no extra heading) after the last real bathroom
+            id_fn = build_id_section_linear if is_linear else build_id_section
+            elements += id_fn(unit_id_photos, [], pdf_options)
 
     elif sort_mode == "bldg_unit_phase":
         for bldg in sorted(data):
@@ -696,14 +801,29 @@ def generate_pdf_report(context, pdf_options=None, progress_callback=None):
     elif sort_mode == "unit_bath_phase":
         for unit in sorted(data):
             unit_hdr = unit_divider(f"Unit {unit if unit != 'UNASSIGNED' else 'Unassigned'}")
-            for bath in sorted(data[unit]):
+            unit_id_photos = []
+
+            real_baths = [b for b in sorted(data[unit]) if b != "OTHER"]
+            for bath in real_baths:
                 phases = data[unit][bath]
-                if hide_empty and not _section_has_photos(phases):
+                unit_id_photos.extend(collect_id_photos(phases, hidden_urls))
+                clean_phases = {k: v for k, v in phases.items() if k in ("BEFORE", "AFTER")}
+                if hide_empty and not _section_has_photos(clean_phases):
                     continue
                 bath_hdr = bath_divider(f"{bath.title()} Bathroom")
                 combined = unit_hdr + bath_hdr
-                elements += section_fn(phases, combined, pdf_options)
+                elements += section_fn(clean_phases, combined, pdf_options)
                 unit_hdr = []
+
+            if "OTHER" in data[unit]:
+                other_phases = data[unit]["OTHER"]
+                for phase_list in other_phases.values():
+                    unit_id_photos.extend(
+                        p for p in phase_list if p.get("url") not in hidden_urls
+                    )
+
+            id_fn = build_id_section_linear if is_linear else build_id_section
+            elements += id_fn(unit_id_photos, [], pdf_options)
 
     else:  # unit_phase
         for unit in sorted(data):

@@ -1017,6 +1017,39 @@ DRAG_DROP_CSS = """
     }
     body.edit-mode .photo-grid:empty + .drop-empty-hint,
     body.edit-mode .drop-empty-hint.visible { display: block; }
+
+    /* ── Show-empty-zones button ── */
+#show-zones-btn {
+    padding: 7px 14px; border-radius: 20px;
+    border: 1px solid rgba(16,172,132,0.45);
+    background: rgba(16,172,132,0.10); color: #10ac84;
+    font-size: 12px; font-weight: 600; cursor: pointer;
+    transition: all 0.18s; white-space: nowrap; display: none;
+}
+body.edit-mode #show-zones-btn { display: inline-block; }
+#show-zones-btn:hover { background: rgba(16,172,132,0.22); border-color: #10ac84; }
+#show-zones-btn.zones-visible { background: #10ac84; color: white; border-color: #10ac84; }
+
+/* ── Injected empty zone ── */
+.injected-zone-wrap {
+    display: none;
+    flex-direction: column; gap: 6px;
+    background: rgba(16,172,132,0.05);
+    border: 1.5px dashed rgba(16,172,132,0.35);
+    border-radius: 8px; padding: 10px 12px;
+}
+.injected-zone-wrap.visible { display: flex; }
+.injected-zone-label {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.7px; color: #10ac84; display: flex; align-items: center; gap: 6px;
+}
+.injected-zone-label .iz-badge {
+    background: #10ac84; color: white;
+    padding: 1px 7px; border-radius: 10px; font-size: 10px;
+}
+.injected-zone-wrap .photo-grid {
+    min-height: 50px;
+}
 """
 
 # ── Drag-and-Drop JS ───────────────────────────────────────────────────────────
@@ -1300,6 +1333,125 @@ document.querySelectorAll('.photo-card').forEach(card => {
 // ── Initial state ────────────────────────────────────────────
 refreshBadge();
 refreshZones();
+
+// ============================================================
+// SHOW EMPTY ZONES
+// ============================================================
+let _zonesVisible = false;
+document.getElementById('show-zones-btn').addEventListener('click', toggleEmptyZones);
+function toggleEmptyZones() {
+    _zonesVisible = !_zonesVisible;
+    const btn = document.getElementById('show-zones-btn');
+    btn.classList.toggle('zones-visible', _zonesVisible);
+    btn.textContent = _zonesVisible ? '− Hide Empty Zones' : '＋ Show Empty Zones';
+    if (_zonesVisible) {
+        injectEmptyZones();
+    } else {
+        removeInjectedZones();
+    }
+}
+// When edit mode is turned off, also hide any injected zones
+const _origToggleEditMode = toggleEditMode;
+
+// Patch toggleEditMode to also clean up zones when mode turns off
+const _editBtn2 = document.getElementById('edit-mode-btn');
+_editBtn2.removeEventListener('click', toggleEditMode);
+_editBtn2.addEventListener('click', function() {
+    toggleEditMode();
+    if (!window._editMode && _zonesVisible) {
+        _zonesVisible = false;
+        document.getElementById('show-zones-btn').classList.remove('zones-visible');
+        document.getElementById('show-zones-btn').textContent = '＋ Show Empty Zones';
+        removeInjectedZones();
+    }
+});
+function removeInjectedZones() {
+    document.querySelectorAll('.injected-zone-wrap').forEach(wrap => {
+        const grid = wrap.querySelector('.photo-grid');
+
+        // If something is malformed, just remove it safely
+        if (!grid) {
+            wrap.remove();
+            return;
+        }
+
+        const hasPhotos = grid.querySelector('.photo-card') !== null;
+
+        if (!hasPhotos) {
+            wrap.remove();
+        } else {
+            // Keep it, but convert it to a normal section
+            wrap.classList.remove('injected-zone-wrap');
+            wrap.removeAttribute('data-injected');
+        }
+    });
+
+    refreshZones();
+    syncCounters();
+}
+
+function injectEmptyZones() {
+    // For every .unit-phases or .bathroom-group block, ensure all three phases exist
+    // as droppable zones.  We look for the parent containers that already hold
+    // .phase-section children and add any that are missing.
+    // Collect all existing zone IDs so we don't double-inject
+    const existingZones = new Set(
+        [...document.querySelectorAll('.photo-grid[data-zone]')].map(g => g.dataset.zone)
+    );
+
+    // Walk every phase container (unit-phases div)
+    document.querySelectorAll('.unit-phases').forEach(container => {
+        // Derive the "base" zone prefix from the first existing zone in this container
+        const firstGrid = container.querySelector('.photo-grid[data-zone]');
+        if (!firstGrid) return;
+
+        const firstZone = firstGrid.dataset.zone;
+        // Strip the trailing __BEFORE / __AFTER / __UNTAGGED to get the base
+        const zoneBase = firstZone.replace(/__(?:BEFORE|AFTER|UNTAGGED)$/, '');
+
+        const phasesToCheck = ['BEFORE', 'AFTER', 'UNTAGGED'];
+        phasesToCheck.forEach(phase => {
+            const zid = zoneBase + '__' + phase;
+            if (existingZones.has(zid)) return; // already there
+
+            const wrap = document.createElement('div');
+            wrap.className = 'injected-zone-wrap phase-section visible';
+            wrap.dataset.injected = '1';
+
+            const badgeClass = phase === 'BEFORE' ? 'before' : (phase === 'AFTER' ? 'after' : 'untagged');
+            const label = phase === 'UNTAGGED' ? 'Untagged' : phase.charAt(0) + phase.slice(1).toLowerCase();
+
+            wrap.innerHTML = `
+                <div class="injected-zone-label">
+                    <span class="iz-badge phase-badge ${badgeClass}">${label}</span>
+                    <span style="color:#8899aa;font-size:10px;">Empty — drop photos here</span>
+                </div>
+                <div class="phase-header" style="display:none">
+                    <h3 class="phase-title"></h3>
+                    <span class="phase-count">0 photos</span>
+                </div>
+                <div class="photo-grid" data-zone="${zid}"></div>
+            `;
+
+            container.appendChild(wrap);
+        });
+    });
+
+    // Also handle bathroom-group containers (unit_bath_phase / full modes)
+    document.querySelectorAll('.bathroom-group').forEach(group => {
+        const container = group.querySelector('.unit-phases');
+        if (!container) return;
+        // Already handled above by the .unit-phases walker
+    });
+
+    // Make all new cards draggable and refresh zones
+    document.querySelectorAll('.photo-card').forEach(card => {
+        card.setAttribute('draggable', 'true');
+    });
+    refreshZones();
+    syncCounters();
+}
+
 </script>
 """
 
@@ -1759,6 +1911,7 @@ DND_TOOLBAR_HTML = """
     <button id="undo-btn" disabled>↩ Undo</button>
     <button id="reset-btn" disabled>⟳ Reset</button>
     <span id="edit-count-badge"></span>
+    <button id="show-zones-btn" title="Inject empty drop targets into sections that are missing UNTAGGED / BEFORE / AFTER zones">＋ Show Empty Zones</button>
     <span id="edit-mode-hint">Enable to rearrange photos</span>
 </div>
 """
@@ -1927,7 +2080,7 @@ def _make_tail():
 # ── Phase-section builder (shared by all 4 generators) ───────────────────────
 def _phase_section(photos, phase, zone_id):
     badge = "before" if phase == "BEFORE" else ("after" if phase == "AFTER" else "untagged")
-    label = phase if phase != "UNTAGGED" else "Untagged"
+    label = phase if phase != "UNTAGGED" else "Identification"
     html  = f'<div class="phase-section">'
     html += f'<div class="phase-header"><h3 class="phase-title"><span class="phase-badge {badge}">{label}</span></h3>'
     html += f'<span class="phase-count">{len(photos)} photos</span></div>'

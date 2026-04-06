@@ -9,3 +9,5 @@ V 2.2.1 - Added drag & drop capabilities and edit toolbar. Various cosmetic upgr
 V 2.3.1 - Added PDF Customization & its associated dashboard. Added Photo Visibility Control, introduced Linear Layout as an option for PDFs.
 
 V 2.4.1 - Added a Help Hub with FAQs & a walkthrough. Added Report & Request system, Changelog, & Dev Access. Expanded PDF Customization Dashboard to include Custom Cover Pages. Various cosemtic & clarity upgrades.
+
+V 2.4.2 - Fixed bugs in the Linear Layout PDF, fixed several spelling errors, minor bug fixes.
