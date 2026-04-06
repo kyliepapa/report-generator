@@ -167,6 +167,20 @@
             </button>
 
         </div>
+        <div class="util-btn-row">
+            <button class="util-btn" id="helpBtn">
+                <span class="util-icon">❓</span> Help
+            </button>
+            <button class="util-btn" id="rnrBtn">
+                <span class="util-icon">📬</span> Report &amp; Request
+            </button>
+            <button class="util-btn" id="changelogBtn">
+                <span class="util-icon">📋</span> Changelog
+            </button>
+        </div>
+        <div class="dev-btn-wrap">
+            <button class="dev-btn" id="devBtn">dev</button>
+        </div>
     </aside>
 
     <!-- MAIN PANEL -->
@@ -186,6 +200,183 @@
 
 </div>
 
+<!-- ============================================================
+     OVERLAY HTML
+     ============================================================ -->
+
+<!-- ════════════════════════════════════════
+     HELP OVERLAY
+     ════════════════════════════════════════ -->
+<div class="overlay-backdrop" id="helpOverlay">
+    <div class="overlay-panel">
+        <div class="overlay-header">
+            <button class="overlay-back-btn" id="helpBackBtn" style="display:none;" title="Back">&#8592;</button>
+            <span class="overlay-title" id="helpTitle">Help</span>
+            <button class="overlay-close-btn" id="helpCloseBtn" title="Close">&#x2715;</button>
+        </div>
+        <div class="overlay-body">
+
+            <!-- Screen 0: Hub -->
+            <div class="overlay-screen active" id="helpHub">
+                <div class="hub-btn-grid">
+                    <button class="hub-btn" id="goFaqBtn">
+                        <div class="hub-btn-icon">💬</div>
+                        <div class="hub-btn-label">Frequently Asked Questions</div>
+                        <div class="hub-btn-desc">Quick answers to the most common questions about this tool.</div>
+                    </button>
+                    <button class="hub-btn" id="goHowToBtn">
+                        <div class="hub-btn-icon">🖼</div>
+                        <div class="hub-btn-label">How to Use This Program</div>
+                        <div class="hub-btn-desc">A visual step-by-step walkthrough with example screenshots.</div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Screen 1: FAQ -->
+            <div class="overlay-screen" id="helpFaq">
+                <div id="faqList"></div>
+                <div class="faq-footer-note">
+                    Still have questions? Check the How-To walkthrough, it answers a lot of edge cases. If you're still struggling, use the <strong>Report &amp; Request</strong> button to report the issue, or contact me directly at kylieblusinc@gmail.com.
+                </div>
+            </div>
+
+            <!-- Screen 2: How To -->
+            <div class="overlay-screen" id="helpHowTo">
+                <div class="carousel-wrap">
+                    <div class="carousel-track" id="carouselTrack"></div>
+                </div>
+                <div class="carousel-arrow-row">
+                    <button class="carousel-arrow" id="carouselPrev">&#8592;</button>
+                    <div class="carousel-dots" id="carouselDots"></div>
+                    <button class="carousel-arrow" id="carouselNext">&#8594;</button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+
+<!-- ════════════════════════════════════════
+     REPORT & REQUEST OVERLAY
+     ════════════════════════════════════════ -->
+<div class="overlay-backdrop" id="rnrOverlay">
+    <div class="overlay-panel">
+        <div class="overlay-header">
+            <span class="overlay-title">Report &amp; Request</span>
+            <button class="overlay-close-btn" id="rnrCloseBtn" title="Close">&#x2715;</button>
+        </div>
+        <div class="overlay-body">
+
+            <!-- Normal form screen -->
+            <div class="overlay-screen active" id="rnrForm">
+                <p class="rnr-intro">
+                    Found a bug, have a feature request, or want to share feedback? Fill out the form below and I'll check it out. Please be as descriptive as possible — the more context you provide, the faster I can get it taken care of.
+                </p>
+                <textarea class="rnr-textarea" id="rnrMessage" placeholder="Describe the issue or request in detail…"></textarea>
+                <div class="rnr-bottom-row">
+                    <input class="rnr-submitter field-input" id="rnrSubmitter" placeholder="Submitted by:" autocomplete="off" />
+                    <button class="rnr-submit-btn" id="rnrSubmitBtn">Submit</button>
+                </div>
+                <div class="rnr-error" id="rnrError"></div>
+                <p class="rnr-fine-print">If you want to get ahold of me faster or send additional context like screenshots, shoot me an email at kylieblusinc@gmail.com</p>
+            </div>
+
+            <!-- Success screen -->
+            <div class="overlay-screen" id="rnrSuccess">
+                <div class="rnr-success-msg">
+                    <div class="rnr-success-icon">✅</div>
+                    <div class="rnr-success-text">Submission received!</div>
+                    <div class="rnr-success-sub">Your report has been logged. Thanks for taking the time to reach out.</div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+
+<!-- ════════════════════════════════════════
+     CHANGELOG OVERLAY
+     ════════════════════════════════════════ -->
+<div class="overlay-backdrop" id="changelogOverlay">
+    <div class="overlay-panel">
+        <div class="overlay-header">
+            <span class="overlay-title">📋 Changelog</span>
+            <button class="overlay-close-btn" id="changelogCloseBtn" title="Close">&#x2715;</button>
+        </div>
+        <div class="overlay-body">
+            <div id="changelogContent" class="changelog-body">Loading…</div>
+        </div>
+    </div>
+</div>
+
+
+<!-- ════════════════════════════════════════
+     DEV ACCESS OVERLAY
+     ════════════════════════════════════════ -->
+<div class="overlay-backdrop" id="devOverlay">
+    <div class="overlay-panel">
+        <div class="overlay-header">
+            <button class="overlay-back-btn" id="devBackBtn" style="display:none;" title="Back">&#8592;</button>
+            <span class="overlay-title" id="devTitle">Developer Access</span>
+            <button class="overlay-close-btn" id="devCloseBtn" title="Close">&#x2715;</button>
+        </div>
+        <div class="overlay-body">
+
+            <!-- Screen 0: Password -->
+            <div class="overlay-screen active" id="devPwScreen">
+                <div class="dev-pw-wrap">
+                    <p class="dev-pw-label">This area is for developer use. Enter the developer password to continue.</p>
+                    <div class="dev-pw-row">
+                        <input type="password" class="dev-pw-input" id="devPwInput" placeholder="••••••••" autocomplete="off" />
+                        <button class="dev-pw-btn" id="devPwSubmit">Unlock</button>
+                    </div>
+                    <div class="dev-pw-error" id="devPwError"></div>
+                </div>
+            </div>
+
+            <!-- Screen 1: Hub -->
+            <div class="overlay-screen" id="devHub">
+                <div class="dev-hub-grid">
+                    <button class="hub-btn" id="goUsageLogsBtn">
+                        <div class="hub-btn-icon">📈</div>
+                        <div class="hub-btn-label">Usage Logs</div>
+                        <div class="hub-btn-desc">View and edit the application usage log file.</div>
+                    </button>
+                    <button class="hub-btn" id="goDevRnrBtn">
+                        <div class="hub-btn-icon">📬</div>
+                        <div class="hub-btn-label">Reports &amp; Requests</div>
+                        <div class="hub-btn-desc">View and edit all submitted user reports.</div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Screen 2: Usage Logs editor -->
+            <div class="overlay-screen" id="devUsageLogs">
+                <textarea class="dev-edit-area" id="devUsageLogsArea" spellcheck="false"></textarea>
+                <div class="dev-save-note">Changes are saved to the server when you click Save or navigate away.</div>
+                <div style="display:flex;align-items:center;margin-top:10px;">
+                    <button class="dev-save-btn" id="devSaveUsage">Save</button>
+                    <span class="dev-saved-flash" id="devSaveUsageFlash">Saved ✓</span>
+                </div>
+            </div>
+
+            <!-- Screen 3: Reports & Requests editor -->
+            <div class="overlay-screen" id="devRnrEditor">
+                <textarea class="dev-edit-area" id="devRnrArea" spellcheck="false"></textarea>
+                <div class="dev-save-note">Changes are saved to the server when you click Save or navigate away.</div>
+                <div style="display:flex;align-items:center;margin-top:10px;">
+                    <button class="dev-save-btn" id="devSaveRnr">Save</button>
+                    <span class="dev-saved-flash" id="devSaveRnrFlash">Saved ✓</span>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
 <script src="/static/script.js"></script>
+<script src="/static/overlays.js"></script>
 </body>
 </html>

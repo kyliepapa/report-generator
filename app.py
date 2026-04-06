@@ -5,6 +5,7 @@ import os
 import time
 import threading
 import uuid
+from datetime import datetime
 
 from newreport import (
     fetch_photos,
@@ -28,6 +29,36 @@ BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR  = os.path.join(BASE_DIR, 'static')
 REPORTS_DIR = os.path.join(STATIC_DIR, 'reports')
 os.makedirs(REPORTS_DIR, exist_ok=True)
+
+CHANGELOG_FILE  = os.path.join(BASE_DIR, 'changelog.txt')
+REPNREQ_FILE    = os.path.join(BASE_DIR, 'repnreq.txt')
+USAGE_LOGS_FILE = os.path.join(BASE_DIR, 'usage_logs.txt')
+ 
+# ─────────────────────────────────────────
+# Helper functions for reading & editing files
+# ─────────────────────────────────────────
+def _read_file(path):
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return f.read()
+    except FileNotFoundError:
+        return ''
+ 
+ 
+def _write_file(path, content):
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(content)
+ 
+ 
+def _append_file(path, content):
+    with open(path, 'a', encoding='utf-8') as f:
+        f.write(content)
+
+# ───── Usage Log Helper ──────────────────
+def _append_usage_log(project_id, project_name):
+    ts    = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    entry = f"{ts} | Project ID: {project_id} | Project Name: {project_name}\n"
+    _append_file(USAGE_LOGS_FILE, entry)
 
 # ─────────────────────────────────────────
 # In-memory job store
@@ -146,6 +177,7 @@ def apply_photo_edits(structured, special_rooms_structured, photo_edits, sort_mo
         phases_dict[phase] = new_list
 
 
+
 # ─────────────────────────────────────────
 # ROUTES
 # ─────────────────────────────────────────
@@ -187,6 +219,7 @@ def start_job():
         try:
             _log(job_id, "⚙️ Configuring inputs...")
             set_inputs(project_id, multi_bath, label_format, bath_names, project_name, special_rooms)
+            _append_usage_log(project_id, project_name)
             configure_sorting()
             configure_bathrooms()
             configure_special_rooms()
@@ -223,6 +256,7 @@ def start_job():
             missing_before = missing.get("BEFORE", [])
             missing_after  = missing.get("AFTER",  [])
             _log(job_id, "📊 MISSING PHOTO SUMMARY")
+            _log(job_id, "")
 
             _log(job_id, f"🟠 Missing BEFORE photos: {len(missing_before)}")
             if missing_before:
@@ -303,6 +337,7 @@ def start_pdf_job():
         "layout":            data.get("pdf_layout", "grid"),          # "grid" | "linear"
         "hide_empty_fields": data.get("hide_empty_fields", False),    # bool
         "hidden_photos":     data.get("hidden_photos", []),           # list of URLs
+        "cover_fields":      data.get("cover_fields", []),            # list of {key, label, value, visible} from the dashboard
     }
 
     with jobs_lock:
@@ -359,6 +394,16 @@ def start_pdf_job():
             if hidden_set:
                 _log(job_id, f"🙈 Hiding {len(hidden_set)} photo(s) per your selection")
 
+            cover_fields = pdf_options.get("cover_fields", [])
+            if cover_fields:
+                hidden_fields = [f["label"] for f in cover_fields if not f.get("visible", True)]
+                if hidden_fields:
+                    _log(job_id, f"📋 Cover fields hidden: {', '.join(hidden_fields)}")
+                edited_fields = [f["label"] for f in cover_fields
+                                 if f.get("visible", True) and f.get("value", "").strip()]
+                if edited_fields:
+                    _log(job_id, f"📋 Cover fields edited: {', '.join(edited_fields)}")    
+
             _log(job_id, "🏗 Building PDF...")
             context = build_pdf_context(structured, photos, special_rooms_structured)
             context["structured"] = structured
@@ -385,6 +430,57 @@ def start_pdf_job():
 
     threading.Thread(target=run, daemon=True).start()
     return jsonify({"job_id": job_id})
+
+# ── Changelog ───────────────────────────
+@app.route('/get_changelog')
+def get_changelog():
+    return jsonify({'content': _read_file(CHANGELOG_FILE)})
+ 
+ 
+# ── Report & Request submission ──────────
+@app.route('/submit_rnr', methods=['POST'])
+def submit_rnr():
+    data      = request.json
+    message   = data.get('message', '').strip()
+    submitter = data.get('submitter', '').strip()
+    if not message or not submitter:
+        return jsonify({'error': 'Missing fields'}), 400
+ 
+    ts    = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    entry = f"{ts}\n{message}\nSubmitted by: {submitter}\n\n"
+    _append_file(REPNREQ_FILE, entry)
+    return jsonify({'ok': True})
+ 
+ 
+# ── Dev: read a file ─────────────────────
+@app.route('/dev_get_file')
+def dev_get_file():
+    file_key = request.args.get('file')
+    paths = {
+        'usage_logs': USAGE_LOGS_FILE,
+        'repnreq':    REPNREQ_FILE,
+    }
+    path = paths.get(file_key)
+    if not path:
+        return jsonify({'error': 'Unknown file'}), 400
+    return jsonify({'content': _read_file(path)})
+ 
+ 
+# ── Dev: save a file ─────────────────────
+@app.route('/dev_save_file', methods=['POST'])
+def dev_save_file():
+    data     = request.json
+    file_key = data.get('file')
+    content  = data.get('content', '')
+    paths = {
+        'usage_logs': USAGE_LOGS_FILE,
+        'repnreq':    REPNREQ_FILE,
+    }
+    path = paths.get(file_key)
+    if not path:
+        return jsonify({'error': 'Unknown file'}), 400
+    _write_file(path, content)
+    return jsonify({'ok': True})
 
 
 if __name__ == '__main__':

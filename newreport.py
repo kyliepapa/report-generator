@@ -563,8 +563,13 @@ def analyze_missing_photos(structure):
     missing = {"BEFORE": [], "AFTER": []}
 
     def check(label, phases_dict, is_other=False):
+        # 🚫 Skip UNASSIGNED / UNTAGGED sections entirely
+        if "UNASSIGNED" in label or "UNTAGGED" in label:
+            return
+
         if is_other and not _other_bath_is_active(phases_dict):
             return
+
         for phase in ["BEFORE", "AFTER"]:
             if not phases_dict.get(phase):
                 missing[phase].append(label)
@@ -575,16 +580,19 @@ def analyze_missing_photos(structure):
                 for bath in sorted(structure[bldg][unit]):
                     lbl = f"Bldg {bldg} / Unit {unit} / {bath}"
                     check(lbl, structure[bldg][unit][bath], is_other=(bath == "OTHER"))
+
     elif SORT_METHOD_KEY == "bldg_unit_phase":
         for bldg in sorted(structure):
             for unit in sorted(structure[bldg]):
                 lbl = f"Bldg {bldg} / Unit {unit}"
                 check(lbl, structure[bldg][unit])
+
     elif SORT_METHOD_KEY == "unit_bath_phase":
         for unit in sorted(structure):
             for bath in sorted(structure[unit]):
                 lbl = f"Unit {unit} / {bath}"
                 check(lbl, structure[unit][bath], is_other=(bath == "OTHER"))
+
     else:
         for unit in sorted(structure):
             lbl = f"Unit {unit}"
@@ -782,6 +790,48 @@ PDF_DASHBOARD_CSS = """
 .pdf-option-row-title { font-size: 13.5px; font-weight: 600; color: #1a2535; }
 .pdf-option-row-hint  { font-size: 11.5px; color: #8899aa; line-height: 1.4; }
  
+/* ── Cover page editor ── */
+.cover-editor-hint {
+    font-size: 11.5px; color: #8899aa; margin-bottom: 12px; line-height: 1.5;
+}
+.cover-fields-list {
+    display: flex; flex-direction: column; gap: 7px;
+}
+.cover-field-row {
+    display: grid;
+    grid-template-columns: 22px 110px 1fr;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: #f6f8fc;
+    border: 1px solid #e8ecf4;
+    transition: background 0.15s, opacity 0.15s;
+}
+.cover-field-row.cover-field-hidden {
+    opacity: 0.45;
+    background: #f0f0f0;
+}
+.cover-field-toggle {
+    width: 16px; height: 16px; accent-color: #2e86de; cursor: pointer; flex-shrink: 0;
+}
+.cover-field-label {
+    font-size: 12px; font-weight: 600; color: #445566;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cover-field-input {
+    width: 100%; background: white; border: 1px solid #dde3ed;
+    border-radius: 6px; padding: 6px 9px; font-size: 12.5px;
+    color: #1a2535; font-family: 'Segoe UI', system-ui, sans-serif;
+    outline: none; transition: border-color 0.15s, box-shadow 0.15s;
+}
+.cover-field-input:focus {
+    border-color: #2e86de; box-shadow: 0 0 0 3px rgba(46,134,222,0.12);
+}
+.cover-field-input:disabled {
+    background: #f0f0f0; color: #aaa; cursor: not-allowed;
+}
+ 
 /* Photo hide button */
 #pdfHidePhotosBtn {
     padding: 9px 20px; border-radius: 20px; border: 2px solid #2e86de;
@@ -822,15 +872,18 @@ body.pdf-select-mode .photo-card.pdf-hidden-selected::after {
     background: linear-gradient(90deg, #2e86de, #10ac84);
     height: 100%; width: 0%; border-radius: 8px; transition: width 0.4s ease;
 }
-.pdf-progress-label { font-size: 12.5px; color: #636e72; display: flex; justify-content: space-between; align-items: center; }
+.pdf-progress-label {
+    font-size: 12.5px; color: #636e72;
+    display: flex; justify-content: space-between; align-items: center;
+}
 .pdf-progress-status { font-weight: 600; color: #2e86de; }
  
 /* Footer */
 .pdf-modal-footer {
     padding: 18px 28px 24px; border-top: 1px solid #e8ecf4;
-    display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
-    background: #fafbfd; border-radius: 0 0 16px 16px;
-    position: sticky; bottom: 0;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 14px; flex-wrap: wrap; background: #fafbfd;
+    border-radius: 0 0 16px 16px; position: sticky; bottom: 0;
 }
 #pdfGenerateBtn {
     padding: 12px 30px; background: #2e86de; color: white; border: none;
@@ -848,6 +901,7 @@ body.pdf-select-mode .photo-card.pdf-hidden-selected::after {
 .pdf-open-link:hover { background: #f0f7ff; }
 .pdf-open-link.visible { display: inline-flex; align-items: center; gap: 6px; }
 """
+ 
 
 # ── Drag-and-Drop CSS ──────────────────────────────────────────────────────────
 DRAG_DROP_CSS = """
@@ -1259,14 +1313,19 @@ PDF_PROGRESS_JS = """
 // ── State ────────────────────────────────────────────────────
 let _pdfLayout        = 'grid';
 let _hideEmptyFields  = false;
-let _hiddenPhotoUrls  = new Set();   // persists across open/close of modal
+let _hiddenPhotoUrls  = new Set();
 let _photoSelectMode  = false;
-let _tempHiddenUrls   = new Set();   // working copy while in select mode
+let _tempHiddenUrls   = new Set();
+ 
+// Cover-field state: array of { key, label, value, visible }
+// Populated once on first open, then kept in sync with the UI.
+let _coverFields = [];
  
 // ── Open / Close modal ───────────────────────────────────────
 function openPdfDashboard() {
     document.getElementById('pdfDashboardOverlay').classList.add('active');
     document.getElementById('hideEmptyCheck').checked = _hideEmptyFields;
+    if (_coverFields.length === 0) initCoverFields();
     refreshHideCount();
     if (_photoSelectMode) endPhotoSelectMode(false);
 }
@@ -1297,6 +1356,80 @@ document.getElementById('hideEmptyCheck').addEventListener('change', function() 
     _hideEmptyFields = this.checked;
 });
  
+// ── Cover page fields ─────────────────────────────────────────────────────────
+// Derive sensible defaults from the URL params baked into the report page.
+function getCoverDefaults() {
+    const p = new URLSearchParams(window.location.search);
+    const projectName = p.get('project_name') || p.get('project_id') || '';
+    // Date formatted the same way Python does it in context['date_generated']
+    const today = new Date();
+    const months = ['January','February','March','April','May','June',
+                    'July','August','September','October','November','December'];
+    const dateStr = `${months[today.getMonth()]} ${String(today.getDate()).padStart(2,'0')}, ${today.getFullYear()}`;
+ 
+    return [
+        { key: 'subtitle',         label: 'Subtitle',       value: 'INSTALLATION PHOTOS' },
+        { key: 'project_name',     label: 'Project Name',   value: projectName.toUpperCase() },
+        { key: 'address',          label: 'Address',        value: '' },
+        { key: 'date',             label: 'Date Line',      value: `Date: ${dateStr}` },
+        { key: 'total_buildings',  label: 'Buildings',      value: '' },
+        { key: 'total_units',      label: 'Units',          value: '' },
+        { key: 'total_bathrooms',  label: 'Bathrooms',      value: '' },
+        { key: 'total_photos',     label: 'Total Photos',   value: '' },
+        { key: 'layout',           label: 'Layout Badge',   value: '' },
+    ];
+}
+ 
+function initCoverFields() {
+    _coverFields = getCoverDefaults().map(f => ({ ...f, visible: true }));
+    renderCoverEditor();
+}
+ 
+function renderCoverEditor() {
+    const container = document.getElementById('coverFieldsContainer');
+    if (!container) return;
+    container.innerHTML = '';
+ 
+    _coverFields.forEach((field, idx) => {
+        const row = document.createElement('div');
+        row.className = 'cover-field-row' + (field.visible ? '' : ' cover-field-hidden');
+        row.dataset.idx = idx;
+ 
+        // Visibility toggle
+        const toggle = document.createElement('input');
+        toggle.type = 'checkbox';
+        toggle.className = 'cover-field-toggle';
+        toggle.checked = field.visible;
+        toggle.title = 'Include this line on the cover page';
+        toggle.addEventListener('change', function() {
+            _coverFields[idx].visible = this.checked;
+            row.classList.toggle('cover-field-hidden', !this.checked);
+            inp.disabled = !this.checked;
+        });
+ 
+        // Label
+        const lbl = document.createElement('span');
+        lbl.className = 'cover-field-label';
+        lbl.textContent = field.label;
+ 
+        // Text input
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.className = 'cover-field-input';
+        inp.placeholder = field.value || '(auto)';
+        inp.value = field.value;
+        inp.disabled = !field.visible;
+        inp.addEventListener('input', function() {
+            _coverFields[idx].value = this.value;
+        });
+ 
+        row.appendChild(toggle);
+        row.appendChild(lbl);
+        row.appendChild(inp);
+        container.appendChild(row);
+    });
+}
+ 
 // ── Photo selection mode ─────────────────────────────────────
 function togglePhotoSelectMode() {
     if (!_photoSelectMode) {
@@ -1309,8 +1442,6 @@ function togglePhotoSelectMode() {
 function startPhotoSelectMode() {
     _photoSelectMode = true;
     _tempHiddenUrls  = new Set(_hiddenPhotoUrls);
- 
-    // Close modal so user can see report
     document.getElementById('pdfDashboardOverlay').classList.remove('active');
  
     document.querySelectorAll('.photo-card').forEach(card => {
@@ -1338,13 +1469,8 @@ function startPhotoSelectMode() {
         }
  
         const url = img.src;
-        if (_hiddenPhotoUrls.has(url)) {
-            cb.checked = true;
-            card.classList.add('pdf-hidden-selected');
-        } else {
-            cb.checked = false;
-            card.classList.remove('pdf-hidden-selected');
-        }
+        cb.checked = _hiddenPhotoUrls.has(url);
+        card.classList.toggle('pdf-hidden-selected', cb.checked);
  
         card._pdfClickHandler = function(e) {
             if (e.target === cb) return;
@@ -1355,21 +1481,15 @@ function startPhotoSelectMode() {
     });
  
     document.body.classList.add('pdf-select-mode');
- 
-    const btn = document.getElementById('pdfHidePhotosBtn');
-    btn.textContent = '💾 Save Selections';
-    btn.classList.add('selecting');
- 
+    document.getElementById('pdfHidePhotosBtn').textContent = '💾 Save Selections';
+    document.getElementById('pdfHidePhotosBtn').classList.add('selecting');
     showSelectModeBanner();
     refreshSelectModeCount();
 }
  
 function endPhotoSelectMode(save) {
     _photoSelectMode = false;
- 
-    if (save) {
-        _hiddenPhotoUrls = new Set(_tempHiddenUrls);
-    }
+    if (save) _hiddenPhotoUrls = new Set(_tempHiddenUrls);
  
     document.querySelectorAll('.photo-card').forEach(card => {
         card.classList.remove('pdf-hidden-selected');
@@ -1380,40 +1500,34 @@ function endPhotoSelectMode(save) {
     });
  
     document.body.classList.remove('pdf-select-mode');
- 
-    const btn = document.getElementById('pdfHidePhotosBtn');
-    btn.textContent = '🙈 Select Photos to Hide';
-    btn.classList.remove('selecting');
- 
+    document.getElementById('pdfHidePhotosBtn').textContent = '🙈 Select Photos to Hide';
+    document.getElementById('pdfHidePhotosBtn').classList.remove('selecting');
     removeSelectModeBanner();
     refreshHideCount();
     document.getElementById('pdfDashboardOverlay').classList.add('active');
 }
  
-// ── Floating banner while selecting ─────────────────────────
+// ── Floating banner ──────────────────────────────────────────
 let _banner = null;
  
 function showSelectModeBanner() {
     if (_banner) return;
     _banner = document.createElement('div');
-    _banner.id = 'pdfSelectBanner';
     _banner.style.cssText = `
-        position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-        background: #1a2535; color: white; padding: 13px 28px; border-radius: 40px;
-        font-size: 13.5px; font-weight: 600; z-index: 10001;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.35);
-        display: flex; align-items: center; gap: 16px; white-space: nowrap;
+        position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+        background:#1a2535; color:white; padding:13px 28px; border-radius:40px;
+        font-size:13.5px; font-weight:600; z-index:10001;
+        box-shadow:0 8px 32px rgba(0,0,0,0.35);
+        display:flex; align-items:center; gap:16px; white-space:nowrap;
     `;
     _banner.innerHTML = `
         <span id="bannerCount">Click photos to hide them from the PDF</span>
-        <button onclick="endPhotoSelectMode(true)" style="
-            background:#2e86de; color:white; border:none; padding:7px 16px;
-            border-radius:20px; font-size:12px; font-weight:700; cursor:pointer;">
+        <button onclick="endPhotoSelectMode(true)" style="background:#2e86de;color:white;border:none;
+            padding:7px 16px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;">
             💾 Save
         </button>
-        <button onclick="endPhotoSelectMode(false)" style="
-            background:rgba(255,255,255,0.12); color:white; border:none; padding:7px 14px;
-            border-radius:20px; font-size:12px; cursor:pointer;">
+        <button onclick="endPhotoSelectMode(false)" style="background:rgba(255,255,255,0.12);
+            color:white;border:none;padding:7px 14px;border-radius:20px;font-size:12px;cursor:pointer;">
             Cancel
         </button>
     `;
@@ -1425,13 +1539,11 @@ function removeSelectModeBanner() {
 }
  
 function refreshSelectModeCount() {
-    const n = _tempHiddenUrls.size;
+    const n  = _tempHiddenUrls.size;
     const el = document.getElementById('bannerCount');
-    if (el) {
-        el.textContent = n === 0
-            ? 'Click photos to hide them from the PDF'
-            : `${n} photo${n !== 1 ? 's' : ''} selected to hide`;
-    }
+    if (el) el.textContent = n === 0
+        ? 'Click photos to hide them from the PDF'
+        : `${n} photo${n !== 1 ? 's' : ''} selected to hide`;
 }
  
 function refreshHideCount() {
@@ -1460,6 +1572,11 @@ function startPdfGeneration() {
     const photoEdits = (typeof _editCount !== 'undefined' && _editCount > 0)
         ? collectPhotoEdits() : null;
  
+    // Flush any unsaved cover-field input values
+    document.querySelectorAll('.cover-field-input').forEach((inp, i) => {
+        if (_coverFields[i]) _coverFields[i].value = inp.value;
+    });
+ 
     generateBtn.disabled    = true;
     generateBtn.textContent = '⏳ Generating…';
     progressSec.classList.add('visible');
@@ -1470,7 +1587,7 @@ function startPdfGeneration() {
     openLink.classList.remove('visible');
  
     fetch('/start_pdf_job', {
-        method: 'POST',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             project_id:         params.get('project_id'),
@@ -1480,10 +1597,10 @@ function startPdfGeneration() {
             bath_names:         params.get('bath_names'),
             special_rooms:      params.get('special_rooms'),
             photo_edits:        photoEdits,
-            // ── Dashboard options ──────────────────────────
             pdf_layout:         _pdfLayout,
             hide_empty_fields:  _hideEmptyFields,
             hidden_photos:      Array.from(_hiddenPhotoUrls),
+            cover_fields:       _coverFields,   // ← new
         }),
     })
     .then(r => r.json())
@@ -1492,7 +1609,6 @@ function startPdfGeneration() {
             fetch(`/job_status/${job_id}`)
                 .then(r => r.json())
                 .then(data => {
-                    // ── Accurate progress based on photos rendered ──
                     const done  = data.progress_done  || 0;
                     const total = data.progress_total || 0;
  
@@ -1502,7 +1618,6 @@ function startPdfGeneration() {
                         statusText.textContent = `Rendering photo ${done} of ${total}…`;
                         statusPct.textContent  = pct + '%';
                     } else {
-                        // Indeterminate crawl while fetching/tagging
                         const current = parseFloat(fill.style.width) || 0;
                         if (current < 28) fill.style.width = (current + 1.5) + '%';
                         statusText.textContent = 'Fetching & tagging photos…';
@@ -1510,21 +1625,21 @@ function startPdfGeneration() {
  
                     if (data.status === 'complete') {
                         clearInterval(interval);
-                        fill.style.width       = '100%';
-                        statusText.textContent = '✅ PDF ready!';
-                        statusPct.textContent  = '100%';
+                        fill.style.width        = '100%';
+                        statusText.textContent  = '✅ PDF ready!';
+                        statusPct.textContent   = '100%';
                         generateBtn.textContent = '⬇ Generate PDF';
                         generateBtn.disabled    = false;
-                        openLink.href = `/reports/${data.pdf_filename}`;
+                        openLink.href           = `/reports/${data.pdf_filename}`;
                         openLink.classList.add('visible');
                     }
  
                     if (data.status === 'error') {
                         clearInterval(interval);
-                        fill.style.background  = '#e74c3c';
-                        fill.style.width       = '100%';
-                        statusText.textContent = '❌ Error generating PDF';
-                        statusPct.textContent  = '';
+                        fill.style.background   = '#e74c3c';
+                        fill.style.width        = '100%';
+                        statusText.textContent  = '❌ Error generating PDF';
+                        statusPct.textContent   = '';
                         generateBtn.textContent = '⬇ Generate PDF';
                         generateBtn.disabled    = false;
                     }
@@ -1533,7 +1648,6 @@ function startPdfGeneration() {
     });
 }
  
-// collectPhotoEdits — used by drag-and-drop AND by the PDF dashboard
 function collectPhotoEdits() {
     const edits = {};
     document.querySelectorAll('.photo-grid[data-zone]').forEach(grid => {
@@ -1554,9 +1668,6 @@ PDF_BUTTON_HTML = """
     ⚙️ Customize &amp; Export PDF
 </button>
  
-<!-- ═══════════════════════════════════════════
-     PDF CUSTOMIZATION DASHBOARD MODAL
-     ═══════════════════════════════════════════ -->
 <div class="pdf-modal-overlay" id="pdfDashboardOverlay" onclick="closePdfDashboard(event)">
   <div class="pdf-modal" onclick="event.stopPropagation()">
  
@@ -1584,7 +1695,7 @@ PDF_BUTTON_HTML = """
                  onerror="this.style.display='none'">
             <div>
               <div class="layout-btn-label">Linear</div>
-              <div class="layout-btn-desc">Single column, 3–4 photos<br>per page with metadata</div>
+              <div class="layout-btn-desc">Single column, 3–4 photos<br>per page along left</div>
             </div>
           </div>
         </div>
@@ -1601,7 +1712,14 @@ PDF_BUTTON_HTML = """
         </label>
       </div>
  
-      <!-- 3. Select photos to hide -->
+      <!-- 3. Cover page editor -->
+      <div>
+        <div class="pdf-section-label">Cover Page</div>
+        <div class="cover-editor-hint">Toggle lines on/off or edit their text. Leave a field blank to use the auto-generated value.</div>
+        <div id="coverFieldsContainer" class="cover-fields-list"></div>
+      </div>
+ 
+      <!-- 4. Photo visibility -->
       <div>
         <div class="pdf-section-label">Photo Visibility</div>
         <button id="pdfHidePhotosBtn" onclick="togglePhotoSelectMode()">
@@ -1610,7 +1728,7 @@ PDF_BUTTON_HTML = """
         <div class="photo-hide-count" id="photoHideCount"></div>
       </div>
  
-      <!-- 4. Progress (shown during generation) -->
+      <!-- 5. Progress (shown during generation) -->
       <div class="pdf-progress-section" id="pdfProgressSection">
         <div class="pdf-section-label">Generation Progress</div>
         <div class="pdf-progress-bar-wrap">
@@ -1625,12 +1743,8 @@ PDF_BUTTON_HTML = """
     </div>
  
     <div class="pdf-modal-footer">
-      <a class="pdf-open-link" id="pdfOpenLink" href="" target="_blank">
-        ↗ Open PDF
-      </a>
-      <button id="pdfGenerateBtn" onclick="startPdfGeneration()">
-        ⬇ Generate PDF
-      </button>
+      <a class="pdf-open-link" id="pdfOpenLink" href="" target="_blank">↗ Open PDF</a>
+      <button id="pdfGenerateBtn" onclick="startPdfGeneration()">⬇ Generate PDF</button>
     </div>
  
   </div>

@@ -1,0 +1,11 @@
+V 2.1.1 - Initial operational deployment - 3/30/26
+
+V 2.1.2 - Added Special Rooms Handling & associated features.
+
+V 2.1.3 - Added image compression for faster loading & to reduce crashes. Various bug fixes.
+
+V 2.2.1 - Added drag & drop capabilities and edit toolbar. Various cosmetic upgrades.
+
+V 2.3.1 - Added PDF Customization & its associated dashboard. Added Photo Visibility Control, introduced Linear Layout as an option for PDFs.
+
+V 2.4.1 - Added a Help Hub with FAQs & a walkthrough. Added Report & Request system, Changelog, & Dev Access. Expanded PDF Customization Dashboard to include Custom Cover Pages. Various cosemtic & clarity upgrades.
