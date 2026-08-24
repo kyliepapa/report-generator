@@ -1,4 +1,0 @@
-<div style="font-size:52px;line-height:1;">${slide.placeholder}</div>
-            // <div style="font-size:13.5px;font-weight:600;color:var(--text);text-align:center;padding:0 20px;">${slide.label}</div>
-            // <div style="font-size:12px;color:var(--muted);text-align:center;padding:0 30px;line-height:1.6;">${slide.note}</div>
-            // <div class="carousel-slide-label">${i + 1} / ${CAROUSEL_SLIDES.length}</div>
