@@ -1,0 +1,157 @@
+/* ── EDIT MODE TOOLBAR ── */
+    #dnd-toolbar {
+        position: sticky; top: 0; z-index: 900;
+        background: #1a2535;
+        display: flex; align-items: center; gap: 12px;
+        padding: 10px 20px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.18);
+        flex-wrap: wrap;
+    }
+    #dnd-toolbar .toolbar-label {
+        font-size: 12px; font-weight: 700; text-transform: uppercase;
+        letter-spacing: 0.8px; color: #8899aa; flex-shrink: 0;
+    }
+    #edit-mode-btn {
+        padding: 7px 18px; border-radius: 20px; border: 2px solid #2e86de;
+        background: transparent; color: #2e86de; font-size: 13px; font-weight: 700;
+        cursor: pointer; transition: all 0.2s; white-space: nowrap;
+    }
+    #edit-mode-btn.active {
+        background: #2e86de; color: white;
+        box-shadow: 0 0 16px rgba(46,134,222,0.35);
+    }
+    #edit-mode-btn:hover { opacity: 0.85; }
+    #undo-btn, #reset-btn {
+        padding: 7px 14px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.12);
+        background: rgba(255,255,255,0.06); color: #cdd6e0; font-size: 12px;
+        font-weight: 600; cursor: pointer; transition: all 0.18s; white-space: nowrap;
+    }
+    #undo-btn:hover, #reset-btn:hover {
+        background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.25);
+    }
+    #undo-btn:disabled, #reset-btn:disabled {
+        opacity: 0.3; cursor: not-allowed;
+    }
+    #edit-count-badge {
+        background: #e67e22; color: white; font-size: 11px; font-weight: 700;
+        padding: 3px 9px; border-radius: 20px; display: none;
+        animation: pop 0.2s ease;
+    }
+    @keyframes pop { 0%{transform:scale(0.7)} 60%{transform:scale(1.15)} 100%{transform:scale(1)} }
+    #edit-mode-hint {
+        font-size: 11.5px; color: #8899aa; font-style: italic; margin-left: auto;
+    }
+
+    /* ── DRAG-AND-DROP STATES ── */
+
+    /* Card becomes draggable in edit mode */
+    body.edit-mode .photo-card {
+        cursor: grab;
+        position: relative;
+    }
+    body.edit-mode .photo-card::before {
+        content: '⠿';
+        position: absolute; top: 5px; left: 5px; z-index: 10;
+        color: white; font-size: 16px; line-height: 1;
+        background: rgba(0,0,0,0.45);
+        border-radius: 4px; padding: 2px 4px;
+        pointer-events: none;
+        opacity: 0; transition: opacity 0.15s;
+    }
+    body.edit-mode .photo-card:hover::before { opacity: 1; }
+    body.edit-mode .photo-card img { cursor: grab; }
+    body.edit-mode .photo-card.dragging {
+        opacity: 0.35; transform: scale(0.97);
+        box-shadow: none; cursor: grabbing;
+    }
+
+    /* Drop zone highlight */
+    body.edit-mode .photo-grid {
+        min-height: 60px;
+        border-radius: 8px;
+        transition: background 0.15s, box-shadow 0.15s;
+    }
+    body.edit-mode .photo-grid.drag-over {
+        background: rgba(46,134,222,0.08);
+        box-shadow: inset 0 0 0 2px #2e86de;
+    }
+
+    /* Drop insert line (shows between cards) */
+    .drop-indicator {
+        width: 3px; height: 170px;
+        background: #2e86de;
+        border-radius: 3px;
+        flex-shrink: 0;
+        box-shadow: 0 0 8px rgba(46,134,222,0.7);
+        animation: blink-indicator 0.8s ease infinite alternate;
+    }
+    @keyframes blink-indicator {
+        from { opacity: 0.6; } to { opacity: 1; }
+    }
+
+    /* "Moved" flash on a card that just landed */
+    .photo-card.just-dropped {
+        animation: drop-flash 0.55s ease forwards;
+    }
+    @keyframes drop-flash {
+        0%  { box-shadow: 0 0 0 3px #2e86de; background: #e8f4ff; }
+        100%{ box-shadow: 0 2px 8px rgba(0,0,0,0.08); background: white; }
+    }
+
+    /* Edit-mode: disable lightbox cursor hint */
+    body.edit-mode .photo-card img { cursor: grab; }
+
+    /* SortableJS states (subcontract grids) */
+    .sortable-ghost {
+        opacity: 0.35;
+    }
+    .sortable-chosen {
+        box-shadow: 0 0 0 2px #2e86de;
+    }
+    body.edit-mode .subcontract-grid .photo-card,
+    body.edit-mode .subcontract-grid .subcontract-heading {
+        cursor: grab;
+    }
+
+    /* Empty-zone placeholder (shown when all cards are dragged out) */
+    .drop-empty-hint {
+        display: none; width: 100%; padding: 18px;
+        text-align: center; font-size: 12px; color: #aab8c8; font-style: italic;
+        border: 2px dashed rgba(46,134,222,0.3); border-radius: 8px;
+        pointer-events: none;
+    }
+    body.edit-mode .photo-grid:empty + .drop-empty-hint,
+    body.edit-mode .drop-empty-hint.visible { display: block; }
+
+    /* ── Show-empty-zones button ── */
+#show-zones-btn {
+    padding: 7px 14px; border-radius: 20px;
+    border: 1px solid rgba(16,172,132,0.45);
+    background: rgba(16,172,132,0.10); color: #10ac84;
+    font-size: 12px; font-weight: 600; cursor: pointer;
+    transition: all 0.18s; white-space: nowrap; display: none;
+}
+body.edit-mode #show-zones-btn { display: inline-block; }
+#show-zones-btn:hover { background: rgba(16,172,132,0.22); border-color: #10ac84; }
+#show-zones-btn.zones-visible { background: #10ac84; color: white; border-color: #10ac84; }
+
+/* ── Injected empty zone ── */
+.injected-zone-wrap {
+    display: none;
+    flex-direction: column; gap: 6px;
+    background: rgba(16,172,132,0.05);
+    border: 1.5px dashed rgba(16,172,132,0.35);
+    border-radius: 8px; padding: 10px 12px;
+}
+.injected-zone-wrap.visible { display: flex; }
+.injected-zone-label {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.7px; color: #10ac84; display: flex; align-items: center; gap: 6px;
+}
+.injected-zone-label .iz-badge {
+    background: #10ac84; color: white;
+    padding: 1px 7px; border-radius: 10px; font-size: 10px;
+}
+.injected-zone-wrap .photo-grid {
+    min-height: 50px;
+}

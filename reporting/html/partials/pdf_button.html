@@ -1,0 +1,99 @@
+<button id="pdfDashboardBtn" onclick="openPdfDashboard()" style="
+    margin-top:16px; padding:11px 26px; font-size:15px;
+    background:#3498db; color:white; border:none; border-radius:8px; cursor:pointer;
+    font-weight:600; transition:background 0.2s; display:inline-flex; align-items:center; gap:8px;">
+    Customize &amp; Export PDF
+</button>
+ 
+<div class="pdf-modal-overlay" id="pdfDashboardOverlay" onclick="closePdfDashboard(event)">
+  <div class="pdf-modal" onclick="event.stopPropagation()">
+ 
+    <div class="pdf-modal-header">
+      <span class="pdf-modal-title">PDF Export Options</span>
+      <button class="pdf-modal-close" onclick="closePdfDashboard()">&#x2715;</button>
+    </div>
+ 
+    <div class="pdf-modal-nav" id="pdfModalNav">
+      <button class="pdf-modal-tab-btn active" id="pdfTabBtnGeneral" onclick="switchPdfTab('general')">General</button>
+      <div id="pdfModalMeasureTabs" class="pdf-modal-measure-tabs"></div>
+    </div>
+ 
+    <div class="pdf-modal-body">
+ 
+      <!-- General Tab Pane -->
+      <div class="pdf-modal-tab-pane active" id="pdfTabPaneGeneral">
+        <!-- 1. Layout -->
+        <div class="pdf-setting-group">
+          <div class="pdf-section-label">Layout Style</div>
+          <div class="layout-options">
+            <div class="layout-btn selected" id="layoutBtnGrid" onclick="selectLayout('grid')">
+              <img src="/static/layout_grid.png" alt="Grid layout preview"
+                   onerror="this.style.display='none'">
+              <div>
+                <div class="layout-btn-label">Grid</div>
+                <div class="layout-btn-desc">Before &amp; After side-by-side,<br>2 rows per page</div>
+              </div>
+            </div>
+            <div class="layout-btn" id="layoutBtnLinear" onclick="selectLayout('linear')">
+              <img src="/static/layout_linear.png" alt="Linear layout preview"
+                   onerror="this.style.display='none'">
+              <div>
+                <div class="layout-btn-label">Linear</div>
+                <div class="layout-btn-desc">Single column, 3–4 photos<br>per page along left</div>
+              </div>
+            </div>
+          </div>
+        </div>
+ 
+        <!-- 2. Hide empty fields (grid only) -->
+        <div id="hideEmptyRow" class="pdf-setting-group">
+          <label class="pdf-option-row" for="hideEmptyCheck">
+            <input type="checkbox" id="hideEmptyCheck">
+            <div class="pdf-option-row-text">
+              <span class="pdf-option-row-title">Hide Empty Fields</span>
+              <span class="pdf-option-row-hint">Skips sections with no photos. Lone After photos shift left; gaps may be filled by untagged photos.</span>
+            </div>
+          </label>
+        </div>
+ 
+        <!-- 3. Cover page editor -->
+        <div class="pdf-setting-group">
+          <div class="pdf-section-label">Cover Page</div>
+          <div class="cover-editor-hint">Toggle lines on/off or edit their text. Leave a field blank to use the auto-generated value.</div>
+          <div id="coverFieldsContainer" class="cover-fields-list"></div>
+        </div>
+ 
+        <!-- 4. Photo visibility -->
+        <div class="pdf-setting-group">
+          <div class="pdf-section-label">Photo Visibility</div>
+          <button id="pdfHidePhotosBtn" onclick="togglePhotoSelectMode()">
+            🙈 Select Photos to Hide
+          </button>
+          <div class="photo-hide-count" id="photoHideCount"></div>
+        </div>
+      </div>
+ 
+      <!-- Container for Dynamic Measure Tab Panes -->
+      <div id="pdfTabPanesMeasures"></div>
+ 
+      <!-- 5. Progress (shown during generation) -->
+      <div class="pdf-progress-section" id="pdfProgressSection">
+        <div class="pdf-section-label">Generation Progress</div>
+        <div class="pdf-progress-bar-wrap">
+          <div class="pdf-progress-bar-fill" id="pdfProgressFill"></div>
+        </div>
+        <div class="pdf-progress-label">
+          <span id="pdfProgressText">Preparing…</span>
+          <span class="pdf-progress-status" id="pdfProgressPct"></span>
+        </div>
+      </div>
+ 
+    </div>
+ 
+    <div class="pdf-modal-footer">
+      <a class="pdf-open-link" id="pdfOpenLink" href="" target="_blank">↗ Open PDF</a>
+      <button id="pdfGenerateBtn" onclick="startPdfGeneration()">⬇ Generate PDF</button>
+    </div>
+ 
+  </div>
+</div>

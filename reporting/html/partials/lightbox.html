@@ -1,0 +1,23 @@
+<div class="lightbox-overlay" id="lightbox" onclick="closeLightbox(event)">
+    <div class="lightbox-img-wrap">
+        <button class="lightbox-close" onclick="document.getElementById('lightbox').classList.remove('active')">&#x2715;</button>
+        <img id="lightbox-img" src="" alt="Photo">
+    </div>
+    <div class="lightbox-info">
+        <div class="lightbox-info-row">
+            <span class="lightbox-info-label">Timestamp</span>
+            <span class="lightbox-info-value" id="lightbox-ts">—</span>
+        </div>
+        <div class="lightbox-info-row">
+            <span class="lightbox-info-label">Location</span>
+            <span class="lightbox-info-value" id="lightbox-geo">—</span>
+        </div>
+        <div class="lightbox-info-row">
+            <span class="lightbox-info-label">Tags</span>
+            <div class="lightbox-tags" id="lightbox-tags"></div>
+        </div>
+        <div class="lightbox-actions">
+            <a id="lightbox-dl" class="lightbox-download" href="" download target="_blank">&#11015; Download Image</a>
+        </div>
+    </div>
+</div>

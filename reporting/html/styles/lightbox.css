@@ -1,0 +1,44 @@
+/* LIGHTBOX */
+    .lightbox-overlay {
+        display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.94);
+        z-index: 9999; align-items: center; justify-content: center; gap: 24px;
+        padding: 24px;
+    }
+    .lightbox-overlay.active { display: flex; }
+    .lightbox-img-wrap { position: relative; flex-shrink: 0; }
+    .lightbox-overlay img {
+        max-width: 72vw; max-height: 88vh; object-fit: contain;
+        border-radius: 8px; display: block;
+        box-shadow: 0 8px 48px rgba(0,0,0,0.6);
+    }
+    .lightbox-close {
+        position: absolute; top: -40px; right: 0; color: white; font-size: 30px;
+        cursor: pointer; background: none; border: none; line-height: 1; opacity: 0.8;
+    }
+    .lightbox-close:hover { opacity: 1; }
+    .lightbox-info {
+        width: 240px; flex-shrink: 0; color: #cdd6e0;
+        display: flex; flex-direction: column; gap: 14px;
+    }
+    .lightbox-info-row { display: flex; flex-direction: column; gap: 4px; }
+    .lightbox-info-label {
+        font-size: 10px; font-weight: 700; text-transform: uppercase;
+        letter-spacing: 0.8px; color: #6b8099;
+    }
+    .lightbox-info-value { font-size: 13px; color: #e0eaf4; line-height: 1.5; }
+    .lightbox-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px; }
+    .lightbox-tag {
+        background: rgba(46,134,222,0.2); border: 1px solid rgba(46,134,222,0.4);
+        color: #7ec8f7; font-size: 11px; padding: 2px 8px; border-radius: 12px;
+    }
+    .lightbox-geo-link { color: #7ec8f7; text-decoration: none; font-size: 13px; }
+    .lightbox-geo-link:hover { text-decoration: underline; }
+    .lightbox-actions { margin-top: 6px; }
+    .lightbox-download {
+        background: #2e86de; color: white; border: none; padding: 10px 20px;
+        border-radius: 8px; cursor: pointer; font-size: 13px; text-decoration: none;
+        display: inline-flex; align-items: center; gap: 7px; width: 100%;
+        justify-content: center; font-weight: 600;
+    }
+    .lightbox-download:hover { background: #2170c2; }
+    .photo-card img { cursor: zoom-in; }
