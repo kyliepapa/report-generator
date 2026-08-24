@@ -216,10 +216,10 @@ def _configure_and_sort_measure(measure_type, measure_payload, measure_photos, j
         }
         sort_output = run_sort("lighting", lighting_photos, **dataset_kwargs)
 
-        job_manager.log(job_id, "📄 Lighting sort output:")
-        job_manager.log(job_id, repr(sort_output.structure))
-        job_manager.log(job_id, "📄 Lighting issues:")
-        job_manager.log(job_id, repr(sort_output.issues))
+        #job_manager.log(job_id, "📄 Lighting sort output:")
+        #job_manager.log(job_id, repr(sort_output.structure))
+        #job_manager.log(job_id, "📄 Lighting issues:")
+        #job_manager.log(job_id, repr(sort_output.issues))
 
         return sort_output
 
@@ -238,10 +238,10 @@ def _configure_and_sort_measure(measure_type, measure_payload, measure_photos, j
             for issue in missing_keys:
                 job_manager.log(job_id, f"   • photo {issue.get('photo_id')} (tag: {issue.get('tag')})")
 
-        job_manager.log(job_id, "📄 Subcontracted sort output:")
-        job_manager.log(job_id, repr(sort_output.structure))
-        job_manager.log(job_id, "📄 Subcontracted Measure issues:")
-        job_manager.log(job_id, repr(sort_output.issues))
+        #job_manager.log(job_id, "📄 Subcontracted sort output:")
+        #job_manager.log(job_id, repr(sort_output.structure))
+        #job_manager.log(job_id, "📄 Subcontracted Measure issues:")
+        #job_manager.log(job_id, repr(sort_output.issues))
 
         return sort_output
 
@@ -259,10 +259,10 @@ def _configure_and_sort_measure(measure_type, measure_payload, measure_photos, j
             ),
         )
 
-        job_manager.log(job_id, "📄 Heat pump sort output:")
-        job_manager.log(job_id, repr(sort_output.structure))
-        job_manager.log(job_id, "📄 Heat pump issues:")
-        job_manager.log(job_id, repr(sort_output.issues))
+        #job_manager.log(job_id, "📄 Heat pump sort output:")
+        #job_manager.log(job_id, repr(sort_output.structure))
+        #job_manager.log(job_id, "📄 Heat pump issues:")
+        #job_manager.log(job_id, repr(sort_output.issues))
 
         return sort_output
 
