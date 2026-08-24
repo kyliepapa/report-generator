@@ -1,0 +1,24 @@
+Landing page script load order (each as a separate <script src="..."> tag, in this order):
+
+1.  constants/faq-data.js
+2.  constants/carousel-data.js
+3.  constants/dev-config.js
+4.  overlay-core.js
+5.  form-state.js
+6.  terminal.js
+7.  tag-builder.js
+8.  generate-report.js
+9.  help-overlay.js
+10. rnr-overlay.js
+11. changelog-overlay.js
+12. dev-overlay.js
+
+Overlays (9–12) must load after overlay-core.js and their data/constants deps.
+generate-report.js must load after form-state, terminal, and tag-builder.
+
+
+After adding a tabbing system to the landing page, Claude adjusted this order in the actual script calls in index.html, changing:
+form-state, terminal, tag-builder
+TO:
+tag-builder, form-state, tab-manager (new file), terminal 
+I'm assuming it didn't change anything because the ordering constraints listed above are still fulfilled, but documenting the change just in case

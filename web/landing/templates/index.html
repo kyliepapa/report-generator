@@ -1,0 +1,619 @@
+<!-- This is index.html -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>AutoRec Report Generator v2.5.0</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        .field-hint {
+            font-size: 11px;
+            color: var(--muted);
+            line-height: 1.5;
+            margin-top: -2px;
+        }
+
+        /* ── Sidebar widened to accommodate tabs + measure fields ── */
+        .sidebar.wide {
+            width: 500px;
+            min-width: 360px;
+            overflow: hidden;
+        }
+        .sidebar.wide .brand,
+        .sidebar.wide .util-btn-row,
+        .sidebar.wide .dev-btn-wrap {
+            flex-shrink: 0;
+        }
+        .sidebar.wide .form-card {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+        }
+
+        /* ── Tab strip ── */
+        .tab-strip {
+            flex-shrink: 0;
+            min-height: 40px;
+            position: sticky;
+            top: 0;
+            z-index: 5;
+            display: flex;
+            align-items: flex-end;
+            gap: 4px;
+            padding: 0 6px;
+            overflow-x: auto;
+            scrollbar-width: thin;
+        }
+        .tab {
+            flex-shrink: 0;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-bottom: none;
+            border-radius: 8px 8px 0 0;
+            padding: 8px 12px;
+            font-size: 12.5px;
+            font-weight: 500;
+            color: var(--muted);
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background 0.15s, color 0.15s;
+        }
+        .tab:hover { color: var(--text); }
+        .tab.active {
+            background: var(--surface-1, #fff0);
+            color: var(--text);
+            border-color: var(--accent);
+            border-bottom: 1px solid transparent;
+            margin-bottom: -1px;
+        }
+        .tab-close {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            font-size: 10px;
+            opacity: 0.6;
+        }
+        .tab-close:hover { opacity: 1; background: rgba(255,255,255,0.15); }
+        .tab-add {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            margin-bottom: 4px;
+            border-radius: 50%;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--muted);
+            font-size: 15px;
+            cursor: pointer;
+            flex-shrink: 0;
+            transition: background 0.15s, color 0.15s;
+        }
+        .tab-add:hover { background: var(--surface-2); color: var(--text); }
+
+        /* ── Tab panels ── */
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
+
+        /* ── Minimalist toggle switch (settings-style) ── */
+        .field-group.switch-group {
+            flex-direction: row;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+        }
+        .switch-group-text {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            min-width: 0;
+        }
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 40px;
+            height: 23px;
+            flex-shrink: 0;
+        }
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+            position: absolute;
+        }
+        .switch-slider {
+            position: absolute;
+            inset: 0;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            cursor: pointer;
+            transition: background 0.2s ease, border-color 0.2s ease;
+        }
+        .switch-slider::before {
+            content: "";
+            position: absolute;
+            height: 17px;
+            width: 17px;
+            left: 2px;
+            top: 2px;
+            background: #fff;
+            border-radius: 50%;
+            transition: transform 0.2s cubic-bezier(.4,0,.2,1);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.35);
+        }
+        .switch input:checked + .switch-slider {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+        .switch input:checked + .switch-slider::before {
+            transform: translateX(17px);
+        }
+        .switch input:focus-visible + .switch-slider {
+            box-shadow: 0 0 0 3px rgba(46,134,222,0.25);
+        }
+
+        .measure-select {
+            width: 100%;
+        }
+        .measure-fields {
+            margin-top: 4px;
+            padding-top: 10px;
+            border-top: 1px dashed var(--border);
+        }
+        .coming-soon {
+            font-size: 13px;
+            color: var(--muted);
+            padding: 10px 0;
+        }
+
+        /* ── Tag Builder (generic, used by any tag-builder container) ── */
+        .tag-builder {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 7px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 8px 10px;
+            min-height: 42px;
+            cursor: text;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .tag-builder:focus-within {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(46,134,222,0.15);
+        }
+        .tag-input {
+            background: transparent;
+            border: none;
+            outline: none;
+            color: var(--text);
+            font-family: var(--font-main);
+            font-size: 13.5px;
+            flex: 1;
+            min-width: 140px;
+            padding: 2px 2px;
+        }
+        .tag-input::placeholder { color: #445566; }
+
+        /* Pills */
+        .tag-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            background: rgba(155, 89, 182, 0.18);
+            border: 1px solid rgba(155, 89, 182, 0.4);
+            color: #c39bd3;
+            font-size: 12px;
+            font-weight: 500;
+            padding: 3px 9px 3px 10px;
+            border-radius: 20px;
+            white-space: nowrap;
+            user-select: none;
+            transition: background 0.15s, border-color 0.15s;
+        }
+        .tag-pill:hover {
+            background: rgba(155, 89, 182, 0.28);
+            border-color: rgba(155, 89, 182, 0.65);
+        }
+        .tag-pill-x {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            font-size: 11px;
+            line-height: 1;
+            color: #a569bd;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.15s, background 0.15s, color 0.15s;
+            flex-shrink: 0;
+        }
+        .tag-pill:hover .tag-pill-x {
+            opacity: 1;
+        }
+        .tag-pill-x:hover {
+            background: rgba(155, 89, 182, 0.5);
+            color: #f0e0f8;
+        }
+
+        /* ── Multi-project package ── */
+        .project-pairs-wrap {
+            margin-top: 4px;
+        }
+        .project-pairs-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px 10px;
+            margin-bottom: 8px;
+        }
+        .project-pairs-header {
+            display: contents;
+        }
+        .project-pairs-header span {
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .project-pair-row {
+            display: contents;
+        }
+        #projectPairRows {
+            display: contents;
+        }
+        .project-pair-row .field-input {
+            width: 100%;
+        }
+        .add-project-btn {
+            width: 100%;
+            margin-top: 4px;
+            padding: 8px 12px;
+            font-size: 12.5px;
+            font-weight: 500;
+            color: var(--muted);
+            background: transparent;
+            border: 1px dashed var(--border);
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s, border-color 0.15s;
+        }
+        .add-project-btn:hover {
+            background: var(--surface-2);
+            color: var(--text);
+            border-color: var(--accent);
+        }
+        .project-checklist {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-top: 6px;
+        }
+        .project-checklist label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: var(--text);
+            cursor: pointer;
+        }
+        .applicable-projects-section {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px dashed var(--border);
+        }
+    </style>
+</head>
+<body>
+
+<div class="app-shell">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar wide">
+        <div class="brand">
+            <div class="brand-icon">A</div>
+            <div class="brand-text">
+                <span class="brand-name">AutoRec</span>
+                <span class="brand-sub">Report Generator - v 3.0.1 (Beta)</span>
+            </div>
+        </div>
+
+        <!-- TAB STRIP -->
+        <div class="tab-strip" id="tabStrip">
+            <button class="tab active" id="projectTab" data-tab-id="project">
+                <span class="tab-label">Project Details</span>
+            </button>
+            <!-- measure tabs injected here by tab-manager.js -->
+            <button class="tab-add" id="tabAddBtn" title="Add another measure">+</button>
+        </div>
+
+        <div class="form-card">
+            <div class="tab-panels" id="tabPanels">
+
+                <!-- Project Details panel (fixed) -->
+                <div class="tab-panel active" id="panel-project">
+                    <div class="field-group switch-group">
+                        <span class="field-label">Multi-project package?</span>
+                        <label class="switch">
+                            <input type="checkbox" id="switch-multiProject" class="switch-input" data-group="multiProject" />
+                            <span class="switch-slider"></span>
+                        </label>
+                        <button type="button" class="toggle active" data-group="multiProject" data-value="No" hidden tabindex="-1"></button>
+                        <button type="button" class="toggle" data-group="multiProject" data-value="Yes" hidden tabindex="-1"></button>
+                    </div>
+                    <div class="field-group" id="projectIdGroup">
+                        <label class="field-label">Project ID</label>
+                        <input id="projectId" class="field-input" placeholder="e.g. 99615753" autocomplete="off" />
+                    </div>
+                    <div class="field-group">
+                        <label class="field-label" id="projectNameLabel">Project Name <span class="optional">(optional)</span></label>
+                        <input id="projectName" class="field-input" placeholder="e.g. Belovida" autocomplete="off" />
+                    </div>
+                    <div class="field-group">
+                        <label class="field-label">Project Address <span class="optional">(optional)</span></label>
+                        <input id="projectAddress" class="field-input" placeholder="e.g. 123 Main St" autocomplete="off" />
+                    </div>
+                    <div class="project-pairs-wrap" id="projectPairsWrap" style="display:none;">
+                        <div class="project-pairs-grid" id="projectPairsGrid">
+                            <div class="project-pairs-header">
+                                <span>Project ID</span>
+                                <span>Project Nickname</span>
+                            </div>
+                            <div id="projectPairRows"></div>
+                        </div>
+                        <button type="button" class="add-project-btn" id="addProjectBtn">+ Add New Project</button>
+                    </div>
+                </div>
+
+                <!-- measure tab panels injected here by tab-manager.js -->
+            </div>
+
+            <div id="error" class="error-msg" aria-live="polite"></div>
+
+            <button id="generateBtn" class="generate-btn">
+                <span class="btn-icon">▶</span>
+                <span class="btn-label">Generate Report</span>
+            </button>
+
+        </div>
+        <div class="util-btn-row">
+            <button class="util-btn" id="helpBtn">
+                <span class="util-icon">❓</span> Help
+            </button>
+            <button class="util-btn" id="rnrBtn">
+                <span class="util-icon">📬</span> Report &amp; Request
+            </button>
+            <button class="util-btn" id="changelogBtn">
+                <span class="util-icon">📋</span> Changelog
+            </button>
+        </div>
+        <div class="dev-btn-wrap">
+            <button class="dev-btn" id="devBtn">dev</button>
+        </div>
+    </aside>
+
+    <!-- MAIN PANEL -->
+    <main class="main-panel">
+        <div class="terminal-header">
+            <span class="terminal-title">Progress</span>
+            <span class="terminal-status" id="terminalStatus">Idle</span>
+        </div>
+        <pre id="terminal" class="terminal"></pre>
+
+        <div id="reportActions" class="report-actions" style="display:none;">
+            <button class="action-btn primary" id="openReportBtn">
+                ↗ Open Report
+            </button>
+        </div>
+    </main>
+
+</div>
+
+<!-- ============================================================
+     OVERLAY HTML
+     ============================================================ -->
+
+<!-- ════════════════════════════════════════
+     HELP OVERLAY
+     ════════════════════════════════════════ -->
+<div class="overlay-backdrop" id="helpOverlay">
+    <div class="overlay-panel">
+        <div class="overlay-header">
+            <button class="overlay-back-btn" id="helpBackBtn" style="display:none;" title="Back">&#8592;</button>
+            <span class="overlay-title" id="helpTitle">Help</span>
+            <button class="overlay-close-btn" id="helpCloseBtn" title="Close">&#x2715;</button>
+        </div>
+        <div class="overlay-body">
+
+            <!-- Screen 0: Hub -->
+            <div class="overlay-screen active" id="helpHub">
+                <div class="hub-btn-grid">
+                    <button class="hub-btn" id="goFaqBtn">
+                        <div class="hub-btn-icon">💬</div>
+                        <div class="hub-btn-label">Frequently Asked Questions</div>
+                        <div class="hub-btn-desc">Quick answers to the most common questions about this tool.</div>
+                    </button>
+                    <button class="hub-btn" id="goHowToBtn">
+                        <div class="hub-btn-icon">🖼</div>
+                        <div class="hub-btn-label">How to Use This Program</div>
+                        <div class="hub-btn-desc">A visual step-by-step walkthrough with example screenshots.</div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Screen 1: FAQ -->
+            <div class="overlay-screen" id="helpFaq">
+                <div id="faqList"></div>
+                <div class="faq-footer-note">
+                    Still have questions? Check the How-To walkthrough, it answers a lot of edge cases. If you're still struggling, use the <strong>Report &amp; Request</strong> button to report the issue, or contact me directly at kylieblusinc@gmail.com.
+                </div>
+            </div>
+
+            <!-- Screen 2: How To -->
+            <div class="overlay-screen" id="helpHowTo">
+                <div class="carousel-wrap">
+                    <div class="carousel-track" id="carouselTrack"></div>
+                </div>
+                <div class="carousel-arrow-row">
+                    <button class="carousel-arrow" id="carouselPrev">&#8592;</button>
+                    <div class="carousel-dots" id="carouselDots"></div>
+                    <button class="carousel-arrow" id="carouselNext">&#8594;</button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+
+<!-- ════════════════════════════════════════
+     REPORT & REQUEST OVERLAY
+     ════════════════════════════════════════ -->
+<div class="overlay-backdrop" id="rnrOverlay">
+    <div class="overlay-panel">
+        <div class="overlay-header">
+            <span class="overlay-title">Report &amp; Request</span>
+            <button class="overlay-close-btn" id="rnrCloseBtn" title="Close">&#x2715;</button>
+        </div>
+        <div class="overlay-body">
+
+            <!-- Normal form screen -->
+            <div class="overlay-screen active" id="rnrForm">
+                <p class="rnr-intro">
+                    Found a bug, have a feature request, or want to share feedback? Fill out the form below and I'll check it out. Please be as descriptive as possible — the more context you provide, the faster I can get it taken care of.
+                </p>
+                <textarea class="rnr-textarea" id="rnrMessage" placeholder="Describe the issue or request in detail…"></textarea>
+                <div class="rnr-bottom-row">
+                    <input class="rnr-submitter field-input" id="rnrSubmitter" placeholder="Submitted by:" autocomplete="off" />
+                    <button class="rnr-submit-btn" id="rnrSubmitBtn">Submit</button>
+                </div>
+                <div class="rnr-error" id="rnrError"></div>
+                <p class="rnr-fine-print">If you want to get ahold of me faster or send additional context like screenshots, shoot me an email at kylieblusinc@gmail.com</p>
+            </div>
+
+            <!-- Success screen -->
+            <div class="overlay-screen" id="rnrSuccess">
+                <div class="rnr-success-msg">
+                    <div class="rnr-success-icon">✅</div>
+                    <div class="rnr-success-text">Submission received!</div>
+                    <div class="rnr-success-sub">Your report has been logged. Thanks for taking the time to reach out.</div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+
+<!-- ════════════════════════════════════════
+     CHANGELOG OVERLAY
+     ════════════════════════════════════════ -->
+<div class="overlay-backdrop" id="changelogOverlay">
+    <div class="overlay-panel">
+        <div class="overlay-header">
+            <span class="overlay-title">📋 Changelog</span>
+            <button class="overlay-close-btn" id="changelogCloseBtn" title="Close">&#x2715;</button>
+        </div>
+        <div class="overlay-body">
+            <div id="changelogContent" class="changelog-body">Loading…</div>
+        </div>
+    </div>
+</div>
+
+
+<!-- ════════════════════════════════════════
+     DEV ACCESS OVERLAY
+     ════════════════════════════════════════ -->
+<div class="overlay-backdrop" id="devOverlay">
+    <div class="overlay-panel">
+        <div class="overlay-header">
+            <button class="overlay-back-btn" id="devBackBtn" style="display:none;" title="Back">&#8592;</button>
+            <span class="overlay-title" id="devTitle">Developer Access</span>
+            <button class="overlay-close-btn" id="devCloseBtn" title="Close">&#x2715;</button>
+        </div>
+        <div class="overlay-body">
+
+            <!-- Screen 0: Password -->
+            <div class="overlay-screen active" id="devPwScreen">
+                <div class="dev-pw-wrap">
+                    <p class="dev-pw-label">This area is for developer use. Enter the developer password to continue.</p>
+                    <div class="dev-pw-row">
+                        <input type="password" class="dev-pw-input" id="devPwInput" placeholder="••••••••" autocomplete="off" />
+                        <button class="dev-pw-btn" id="devPwSubmit">Unlock</button>
+                    </div>
+                    <div class="dev-pw-error" id="devPwError"></div>
+                </div>
+            </div>
+
+            <!-- Screen 1: Hub -->
+            <div class="overlay-screen" id="devHub">
+                <div class="dev-hub-grid">
+                    <button class="hub-btn" id="goUsageLogsBtn">
+                        <div class="hub-btn-icon">📈</div>
+                        <div class="hub-btn-label">Usage Logs</div>
+                        <div class="hub-btn-desc">View and edit the application usage log file.</div>
+                    </button>
+                    <button class="hub-btn" id="goDevRnrBtn">
+                        <div class="hub-btn-icon">📬</div>
+                        <div class="hub-btn-label">Reports &amp; Requests</div>
+                        <div class="hub-btn-desc">View and edit all submitted user reports.</div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Screen 2: Usage Logs editor -->
+            <div class="overlay-screen" id="devUsageLogs">
+                <textarea class="dev-edit-area" id="devUsageLogsArea" spellcheck="false"></textarea>
+                <div class="dev-save-note">Changes are saved to the server when you click Save or navigate away.</div>
+                <div style="display:flex;align-items:center;margin-top:10px;">
+                    <button class="dev-save-btn" id="devSaveUsage">Save</button>
+                    <span class="dev-saved-flash" id="devSaveUsageFlash">Saved ✓</span>
+                </div>
+            </div>
+
+            <!-- Screen 3: Reports & Requests editor -->
+            <div class="overlay-screen" id="devRnrEditor">
+                <textarea class="dev-edit-area" id="devRnrArea" spellcheck="false"></textarea>
+                <div class="dev-save-note">Changes are saved to the server when you click Save or navigate away.</div>
+                <div style="display:flex;align-items:center;margin-top:10px;">
+                    <button class="dev-save-btn" id="devSaveRnr">Save</button>
+                    <span class="dev-saved-flash" id="devSaveRnrFlash">Saved ✓</span>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<script src="scripts/constants/faq-data.js"></script>
+<script src="scripts/constants/carousel-data.js"></script>
+<script src="scripts/constants/dev-config.js"></script>
+<script src="scripts/overlay-core.js"></script>
+<script src="scripts/tag-builder.js"></script>
+<script src="scripts/form-state.js"></script>
+<script src="scripts/project-pairs.js"></script>
+<script src="scripts/tab-manager.js"></script>
+<script src="scripts/terminal.js"></script>
+<script src="scripts/generate-report.js"></script>
+<script src="scripts/help-overlay.js"></script>
+<script src="scripts/rnr-overlay.js"></script>
+<script src="scripts/changelog-overlay.js"></script>
+<script src="scripts/dev-overlay.js"></script>
+
+</body>
+</html>
