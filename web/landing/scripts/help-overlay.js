@@ -2,6 +2,7 @@
 let carouselIdx = 0;
 
 document.getElementById('helpBtn').addEventListener('click', () => {
+    if (window.AutoRecAnalytics) window.AutoRecAnalytics.markHelpOpened();
     showScreen('helpHub');
     document.getElementById('helpBackBtn').style.display = 'none';
     document.getElementById('helpTitle').textContent = 'Help';

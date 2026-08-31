@@ -13,8 +13,8 @@ document.addEventListener('click', (e) => {
         .forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
 
-    const numericMatch = group && group.match(/^(locNumeric|sublocNumeric)-(m\d+)$/);
-    if (numericMatch && typeof window.updateLightingNumericUI === 'function') {
-        window.updateLightingNumericUI(numericMatch[2]);
+    const levelNumericMatch = group && group.match(/^locLevelNumeric-(m\d+)-(\d+)$/);
+    if (levelNumericMatch && typeof window.updateLocationLevelsNumericUI === 'function') {
+        window.updateLocationLevelsNumericUI(levelNumericMatch[1]);
     }
 });

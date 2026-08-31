@@ -5,6 +5,7 @@ Relocated from app.py: '/' (home), '/start_job', '/report',
 '/reports/<filename>'.
 """
 
+import gc
 import threading
 import time
 import uuid
@@ -18,18 +19,20 @@ from flask import Blueprint, render_template, request, send_from_directory, json
 import core.config as config
 import core.paths as paths
 import core.job_manager as job_manager
+import core.analytics as analytics
 from core.photo_fetch import fetch_photos, fetch_tags
 from core.dataset_router import run_sort
 from core.measure_classification import (
     MeasureConfig,
     DuplicateMeasureKeywordError,
     SubcontractedConfigError,
+    ManualArrangeConfigError,
     MultiProjectConfigError,
     run_measure_classification,
 )
 from reporting.html import generators
 from datasets.plumbing.config import PLUMBING
-from datasets.lighting.config import LIGHTING
+from datasets.lighting.config import LIGHTING, level1_tags, parse_location_levels
 
 # Type-specific config keys, per measure, that double as pass-2 fallback
 # classification tags (used when a photo carries no measure_keyword).
@@ -137,7 +140,10 @@ def _derive_classification_tags(measure_type, measure_payload):
     """
     tags = []
     for field_name in _CLASSIFICATION_TAG_FIELDS.get(measure_type, []):
-        tags.extend(_to_list(measure_payload.get(field_name)))
+        if measure_type == "lighting" and field_name == "locations":
+            tags.extend(level1_tags(measure_payload))
+        else:
+            tags.extend(_to_list(measure_payload.get(field_name)))
     return tags
 
 
@@ -205,21 +211,19 @@ def _configure_and_sort_measure(measure_type, measure_payload, measure_photos, j
 
         dataset_kwargs = {
             "installers": _to_list(measure_payload.get("installers")),
-            "locations": _to_list(measure_payload.get("locations")),
-            "sublocations": _to_list(measure_payload.get("sublocations")),
+            "location_levels": parse_location_levels(measure_payload),
             "fixture_types": _to_list(measure_payload.get("fixture_types")),
             "phases": _to_list(measure_payload.get("phases")),
             "serial_tag": str(measure_payload.get("serial_tag", "")),
-            "loc_numeric": str(measure_payload.get("loc_numeric", "")).strip().lower() == "yes",
-            "subloc_numeric": str(measure_payload.get("subloc_numeric", "")).strip().lower() == "yes",
             "loc_bigger_num": str(measure_payload.get("loc_bigger_num", "")).strip().lower() == "yes",
         }
         sort_output = run_sort("lighting", lighting_photos, **dataset_kwargs)
 
-        #job_manager.log(job_id, "📄 Lighting sort output:")
-        #job_manager.log(job_id, repr(sort_output.structure))
-        #job_manager.log(job_id, "📄 Lighting issues:")
-        #job_manager.log(job_id, repr(sort_output.issues))
+        # # Scary Terminal Logs
+        # job_manager.log(job_id, "📄 Lighting sort output:")
+        # job_manager.log(job_id, repr(sort_output.structure))
+        # job_manager.log(job_id, "📄 Lighting issues:")
+        # job_manager.log(job_id, repr(sort_output.issues))
 
         return sort_output
 
@@ -238,10 +242,11 @@ def _configure_and_sort_measure(measure_type, measure_payload, measure_photos, j
             for issue in missing_keys:
                 job_manager.log(job_id, f"   • photo {issue.get('photo_id')} (tag: {issue.get('tag')})")
 
-        #job_manager.log(job_id, "📄 Subcontracted sort output:")
-        #job_manager.log(job_id, repr(sort_output.structure))
-        #job_manager.log(job_id, "📄 Subcontracted Measure issues:")
-        #job_manager.log(job_id, repr(sort_output.issues))
+        # # Scary Terminal Logs
+        # job_manager.log(job_id, "📄 Subcontracted sort output:")
+        # job_manager.log(job_id, repr(sort_output.structure))
+        # job_manager.log(job_id, "📄 Subcontracted Measure issues:")
+        # job_manager.log(job_id, repr(sort_output.issues))
 
         return sort_output
 
@@ -259,10 +264,29 @@ def _configure_and_sort_measure(measure_type, measure_payload, measure_photos, j
             ),
         )
 
-        #job_manager.log(job_id, "📄 Heat pump sort output:")
-        #job_manager.log(job_id, repr(sort_output.structure))
-        #job_manager.log(job_id, "📄 Heat pump issues:")
-        #job_manager.log(job_id, repr(sort_output.issues))
+        # # Scary Terminal Logs
+        # job_manager.log(job_id, "📄 Heat pump sort output:")
+        # job_manager.log(job_id, repr(sort_output.structure))
+        # job_manager.log(job_id, "📄 Heat pump issues:")
+        # job_manager.log(job_id, repr(sort_output.issues))
+
+        return sort_output
+
+    elif measure_type == "manual_arrange":
+        sort_output = run_sort(
+            "manual_arrange",
+            measure_photos,
+            pre_sort_buckets=_to_list(measure_payload.get("pre_sort_buckets")),
+            allow_conflicting_tags=bool(
+                measure_payload.get("allow_conflicting_tags", True)
+            ),
+        )
+
+        # # Scary Terminal Logs
+        # job_manager.log(job_id, "📄 Manual arrange sort output:")
+        # job_manager.log(job_id, repr(sort_output.structure))
+        # job_manager.log(job_id, "📄 Manual arrange issues:")
+        # job_manager.log(job_id, repr(sort_output.issues))
 
         return sort_output
 
@@ -314,36 +338,97 @@ def start_job():
 
     data           = request.json or {}
     job_id         = str(uuid.uuid4())
+    run_id         = str(uuid.uuid4())
     is_multi       = bool(data.get('is_multi_project'))
     project_id     = data.get('project_id')
     project_name   = data.get('project_name') or project_id
+    project_address = str(data.get('project_address') or '').strip()
     package_name   = data.get('package_name') or project_name
     projects_raw   = data.get('projects') or []
     measures_payload = data.get('measures') or []
+
+    analytics_payload = data.get('analytics') or {}
+    display_name = str(analytics_payload.get('display_name') or '').strip() or 'Anonymous'
+    user_id = analytics_payload.get('user_id') or analytics.slugify_user_id(display_name)
+    session_id = str(analytics_payload.get('session_id') or uuid.uuid4())
+    ux = analytics_payload.get('ux') or {}
+    user_agent = request.headers.get('User-Agent', '')
 
     complete_projects = _filter_complete_projects(projects_raw) if is_multi else []
     cache_key = None
     if is_multi:
         cache_key = derive_package_id(package_name, [p['id'] for p in complete_projects])
 
+    project_block = {
+        "is_multi_project": is_multi,
+        "project_id": project_id if not is_multi else None,
+        "package_id": cache_key,
+        "project_name": project_name if not is_multi else None,
+        "project_address": project_address,
+        "package_name": package_name if is_multi else None,
+        "projects": complete_projects if is_multi else [],
+    }
+
+    analytics_record = analytics.new_report_run(
+        run_id=run_id,
+        user_id=user_id,
+        display_name=display_name,
+        session_id=session_id,
+        project_block=project_block,
+        measures_payload=measures_payload,
+        ux=ux,
+        user_agent=user_agent,
+    )
+
     with job_manager.jobs_lock:
         job_manager.jobs[job_id] = job_manager.new_job()
+        job_manager.jobs[job_id]['analytics_run_id'] = run_id
         if cache_key:
             job_manager.jobs[job_id]['package_id'] = cache_key
 
     def run():
         nonlocal project_id, project_name, cache_key
+        ts_start = time.time()
+        timing = {}
+        photos = []
+        photos_per_project = {}
+        measure_outcomes = {}
+        unknown_count = 0
+        html_generated = False
+        status = "error"
+        error_type = None
+        error_message = None
+
+        def _save_analytics():
+            analytics.finalize_report_run(
+                analytics_record,
+                status=status,
+                measures_payload=measures_payload,
+                measure_outcomes=measure_outcomes,
+                photos_fetched_total=len(photos),
+                photos_per_project=photos_per_project,
+                ts_start=ts_start,
+                unknown_count=unknown_count,
+                html_generated=html_generated,
+                timing_ms=timing,
+                error_type=error_type,
+                error_message=error_message,
+            )
+            analytics.save_run(analytics_record)
+
         try:
             job_manager.log(job_id, f"⚙️ Configuring {len(measures_payload)} measure(s)...")
 
             measure_configs = _build_measure_configs(measures_payload)
             payload_by_id = {m.get("id"): m for m in measures_payload}
 
-            photos = []
+            t0 = time.time()
 
             if is_multi:
                 if not complete_projects:
                     job_manager.log(job_id, "❌ ERROR: No complete project pairs provided.")
+                    error_type = "ValidationError"
+                    error_message = "No complete project pairs provided."
                     job_manager.finish(job_id, "error")
                     return
 
@@ -352,6 +437,7 @@ def start_job():
                 project_name = package_name
                 config.PROJECT_ID = cache_key
                 config.PROJECT_NAME = package_name
+                job_manager.save_project_metadata(cache_key, address=project_address)
 
                 _append_package_usage_log(cache_key, package_name, complete_projects)
                 job_manager.log(job_id, f"📦 Multi-project package: {package_name} ({cache_key})")
@@ -360,6 +446,7 @@ def start_job():
                     pid, nick = proj['id'], proj['nickname']
                     job_manager.log(job_id, f"📥 Fetching photos for '{nick}' ({pid})...")
                     project_photos = fetch_photos(pid)
+                    photos_per_project[nick] = len(project_photos)
                     for photo in project_photos:
                         photo['source_project_id'] = pid
                         photo['source_project_nickname'] = nick
@@ -370,17 +457,23 @@ def start_job():
             else:
                 config.PROJECT_ID = project_id
                 config.PROJECT_NAME = project_name
+                job_manager.save_project_metadata(project_id, address=project_address)
                 _append_usage_log(project_id, project_name)
                 job_manager.log(job_id, "📥 Fetching photos...")
                 job_manager.log(job_id, f"Route project_id={project_id}, config.PROJECT_ID={config.PROJECT_ID}")
                 photos = fetch_photos(project_id)
+                photos_per_project[project_name or project_id] = len(photos)
                 job_manager.log(job_id, f"✅ {len(photos)} photos fetched")
 
+            timing["fetch"] = int((time.time() - t0) * 1000)
             report_title = project_name
 
+            t_tag = time.time()
             _tag_photos(photos, job_id)
+            timing["tagging"] = int((time.time() - t_tag) * 1000)
 
             job_manager.log(job_id, "🔀 Classifying photos by measure...")
+            t_class = time.time()
             try:
                 classification = run_measure_classification(
                     photos,
@@ -390,24 +483,39 @@ def start_job():
                 )
             except DuplicateMeasureKeywordError as e:
                 job_manager.log(job_id, f"❌ ERROR: {e}")
+                error_type = "DuplicateMeasureKeywordError"
+                error_message = str(e)
                 job_manager.finish(job_id, "error")
                 return
             except SubcontractedConfigError as e:
                 job_manager.log(job_id, f"❌ ERROR: {e}")
+                error_type = "SubcontractedConfigError"
+                error_message = str(e)
+                job_manager.finish(job_id, "error")
+                return
+            except ManualArrangeConfigError as e:
+                job_manager.log(job_id, f"❌ ERROR: {e}")
+                error_type = "ManualArrangeConfigError"
+                error_message = str(e)
                 job_manager.finish(job_id, "error")
                 return
             except MultiProjectConfigError as e:
                 job_manager.log(job_id, f"❌ ERROR: {e}")
+                error_type = "MultiProjectConfigError"
+                error_message = str(e)
                 job_manager.finish(job_id, "error")
                 return
+            timing["classification"] = int((time.time() - t_class) * 1000)
 
+            unknown_count = len(classification.unknown)
             if classification.unknown:
-                job_manager.log(job_id, f"❓ {len(classification.unknown)} photo(s) didn't match any measure")
+                job_manager.log(job_id, f"❓ {unknown_count} photo(s) didn't match any measure")
 
             sorted_data = {"measures": {}, "unknown": classification.unknown}
             html_measures = []
             cache_key = project_id
 
+            t_sort = time.time()
             for measure in measure_configs:
                 measure_photos = classification.by_measure.get(measure.id, [])
                 measure_payload = payload_by_id.get(measure.id, {})
@@ -422,7 +530,22 @@ def start_job():
                     )
                 except ValueError as e:
                     job_manager.log(job_id, f"⚠️ Skipping '{measure.name}': {e}")
+                    measure_outcomes[measure.id] = {
+                        "photos_classified": len(measure_photos),
+                        "sort_shape": None,
+                        "sort_issues": [{"error": str(e)}],
+                        "issues_count": 1,
+                        "skipped": True,
+                    }
                     continue
+
+                issues = sort_output.issues or []
+                measure_outcomes[measure.id] = {
+                    "photos_classified": len(measure_photos),
+                    "sort_shape": sort_output.shape,
+                    "sort_issues": issues,
+                    "issues_count": len(issues),
+                }
 
                 sorted_data["measures"][measure.id] = {
                     "type": measure.type,
@@ -443,7 +566,7 @@ def start_job():
                     name=measure.name,
                 )
 
-                html_measures.append({
+                html_entry = {
                     "id": measure.id,
                     "name": measure.name,
                     "type": measure.type,
@@ -451,12 +574,19 @@ def start_job():
                     "structure": sort_output.structure,
                     "special": sort_output.special,
                     "phases": _to_list(measure_payload.get("phases")) if measure.type == "lighting" else None,
-                })
+                }
+                if measure.type == "lighting":
+                    html_entry["location_level_count"] = len(
+                        parse_location_levels(measure_payload)
+                    )
+                html_measures.append(html_entry)
 
+            timing["sort_total"] = int((time.time() - t_sort) * 1000)
             job_manager.set_sorted_data(job_id, sorted_data)
 
             if html_measures:
                 job_manager.log(job_id, "🏗 Generating HTML report...")
+                t_html = time.time()
                 if is_multi and classification.unknown:
                     unknown_by_project = _build_unknown_by_project(classification.unknown)
                     generators.generate_html_report(
@@ -470,23 +600,39 @@ def start_job():
                         unknown_photos=classification.unknown,
                         title=report_title,
                     )
+                timing["html_gen"] = int((time.time() - t_html) * 1000)
+                html_generated = True
                 job_manager.log(job_id, "✅ HTML report ready!")
             else:
                 job_manager.log(job_id, "⚠️ No measure produced a sortable result — no HTML report generated.")
 
+            status = "complete"
             job_manager.finish(job_id, "complete")
 
         except Exception as e:
             import traceback
             job_manager.log(job_id, f"❌ ERROR: {e}")
             job_manager.log(job_id, traceback.format_exc())
+            error_type = type(e).__name__
+            error_message = str(e)
             job_manager.finish(job_id, "error")
 
         finally:
+            timing["total"] = int((time.time() - ts_start) * 1000)
+            try:
+                _save_analytics()
+            except Exception:
+                pass
+            try:
+                del photos
+                del html_measures
+            except NameError:
+                pass
+            gc.collect()
             job_manager.work_lock.release()
 
     threading.Thread(target=run, daemon=True).start()
-    response = {"job_id": job_id}
+    response = {"job_id": job_id, "run_id": run_id}
     if cache_key:
         response["package_id"] = cache_key
     return jsonify(response)

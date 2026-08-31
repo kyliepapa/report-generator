@@ -1,0 +1,89 @@
+{
+  "kylie": {
+    "display_name": "Kylie",
+    "first_seen": "2026-08-26T10:50:35-07:00",
+    "last_seen": "2026-08-31T10:51:17-07:00",
+    "run_count": 40,
+    "totals": {
+      "reports": 28,
+      "pdfs": 8,
+      "photos_processed": 6139,
+      "unknown_photos": 2,
+      "edits_total": 125
+    },
+    "preferences": {
+      "subcontracted.hash": {
+        "#": 10
+      },
+      "subcontracted.key_source": {
+        "description": 10
+      },
+      "pdf.layout": {
+        "grid": 2,
+        "linear": 6
+      },
+      "pdf.metadata_position": {
+        "inside": 1,
+        "outside": 7
+      },
+      "pdf.hide_empty_fields": {
+        "False": 6,
+        "True": 2
+      },
+      "lighting.installers": {
+        "JESUS PEREZ": 9,
+        "NIK DURONSLET": 17,
+        "JESUS FIERROS": 8,
+        "JOSE ESPARZA": 8,
+        "JOSE LEGORETTA": 2,
+        "JOSE LEGORRETA": 6
+      },
+      "lighting.location_levels": {
+        "{'tags': ['HALLWAY', 'BREEZWAY', 'PARKING GARAGE', 'PARKING LOT/COMMON AREAS'], 'numeric': False}": 9,
+        "{'tags': ['BUILDING 1', 'BUILDING 2', 'COMMUNITY ROOM', 'LAUNDRY ROOM', 'OFFICE/LEASING', 'HALLWAYS'], 'numeric': False}": 8,
+        "{'tags': ['HALLWAY', 'STAIRWAY 1', 'STAIRWAY 2', 'STAIRWAY 3'], 'numeric': False}": 8,
+        "{'tags': ['1ST FLOOR', '2ND FLOOR', '3RD FLOOR'], 'numeric': False}": 8
+      },
+      "lighting.fixture_types": {
+        "WALLPACK": 9,
+        "VAPOR TIGHT": 9,
+        "CEILING FIXTURE": 9,
+        "4 FOOT T8 FIXTURE": 8,
+        "LED 4 FOOT FIXTURE": 8,
+        "LIGHT SWITCH": 8,
+        "MOTION SENSOR": 8,
+        "THERMOSTAT": 8
+      },
+      "lighting.phases": {
+        "BEFORE": 17,
+        "AFTER": 17,
+        "SETTINGS": 17
+      },
+      "lighting.serial_tag": {
+        "SERIAL/PART NUMBER": 17
+      },
+      "lighting.loc_bigger_num": {
+        "No": 17
+      },
+      "heat_pump.allow_competing_fixture_tags": {
+        "True": 14
+      },
+      "heat_pump.auto_assign_lone_serial_to_before": {
+        "True": 14
+      },
+      "heat_pump.serial_tag": {
+        "SERIAL/PART NUMBER": 10
+      },
+      "manual_arrange.pre_sort_buckets": {
+        "MAIN BUILDING": 5,
+        "BUILDING 1": 5,
+        "BUILDING 2": 5,
+        "ATTACHED BUILDING": 5
+      },
+      "manual_arrange.allow_conflicting_tags": {
+        "True": 3,
+        "False": 4
+      }
+    }
+  }
+}

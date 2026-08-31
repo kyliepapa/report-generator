@@ -13,14 +13,47 @@
             font-size: 11px;
             color: var(--muted);
             line-height: 1.5;
-            margin-top: -2px;
+            margin-top: 0;
+        }
+
+        .field-divider {
+            border-top: 1px solid var(--border);
+            margin: 4px 0 16px;
+        }
+
+        .tab-panel,
+        .measure-fields,
+        .measure-body {
+            display: flex;
+            flex-direction: column;
         }
 
         /* ── Sidebar widened to accommodate tabs + measure fields ── */
         .sidebar.wide {
-            width: 500px;
+            width: var(--sidebar-width, 500px);
             min-width: 360px;
+            max-width: 75vw;
+            flex-shrink: 0;
+            position: relative;
             overflow: hidden;
+        }
+        .sidebar-resize-handle {
+            position: absolute;
+            top: 0;
+            right: -3px;
+            width: 6px;
+            height: 100%;
+            cursor: col-resize;
+            z-index: 10;
+            touch-action: none;
+        }
+        .sidebar-resize-handle:hover,
+        body.sidebar-resizing .sidebar-resize-handle {
+            background: var(--accent);
+            opacity: 0.35;
+        }
+        @media (max-width: 900px) {
+            .sidebar-resize-handle { display: none; }
         }
         .sidebar.wide .brand,
         .sidebar.wide .util-btn-row,
@@ -115,7 +148,8 @@
         .switch-group-text {
             display: flex;
             flex-direction: column;
-            gap: 3px;
+            gap: 2px;
+            margin-bottom: 0;
             min-width: 0;
         }
         .switch {
@@ -175,6 +209,178 @@
             font-size: 13px;
             color: var(--muted);
             padding: 10px 0;
+        }
+
+        /* ── User identity modal ── */
+        body.identity-locked { overflow: hidden; }
+        .identity-modal-backdrop {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            background: rgba(10, 16, 28, 0.72);
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .identity-modal-backdrop.active { display: flex; }
+        .identity-modal {
+            width: 100%;
+            max-width: 400px;
+            background: var(--surface-1, #1a2230);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 28px 26px 22px;
+            box-shadow: 0 24px 60px rgba(0,0,0,0.45);
+        }
+        .identity-modal-title {
+            margin: 0 0 8px;
+            font-size: 18px;
+            font-weight: 600;
+        }
+        .identity-modal-sub {
+            margin: 0 0 16px;
+            font-size: 12.5px;
+            color: var(--muted);
+            line-height: 1.5;
+        }
+        .identity-modal-input { width: 100%; margin-bottom: 14px; }
+        .identity-quick-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 18px;
+            flex-wrap: wrap;
+        }
+        .identity-quick-label { font-size: 12px; color: var(--muted); }
+        .identity-quick-btn {
+            border: 1px solid var(--border);
+            background: var(--surface-2);
+            color: var(--text);
+            border-radius: 20px;
+            padding: 5px 14px;
+            font-size: 12.5px;
+            cursor: pointer;
+        }
+        .identity-quick-btn:hover { border-color: var(--accent); color: var(--accent); }
+        .identity-continue-btn { width: 100%; }
+        .identity-modal-note {
+            margin: 14px 0 0;
+            font-size: 11px;
+            color: var(--muted);
+            line-height: 1.45;
+            text-align: center;
+        }
+
+        /* ── Analytics dashboard (dev) ── */
+        .analytics-toolbar {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 14px;
+        }
+        .analytics-select {
+            flex: 1;
+            min-width: 120px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            padding: 8px 10px;
+            font-size: 12.5px;
+        }
+        .analytics-overview {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+        .analytics-card {
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 12px;
+        }
+        .analytics-card-label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+        .analytics-card-value { font-size: 20px; font-weight: 600; }
+        .analytics-card-sub { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
+        .analytics-table-wrap {
+            overflow: auto;
+            max-height: 340px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+        }
+        .analytics-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        .analytics-table th,
+        .analytics-table td {
+            padding: 8px 10px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+        }
+        .analytics-table th {
+            position: sticky;
+            top: 0;
+            background: var(--surface-2);
+            font-weight: 600;
+            font-size: 11px;
+            color: var(--muted);
+        }
+        .analytics-run-row { cursor: pointer; }
+        .analytics-run-row:hover { background: rgba(46,134,222,0.08); }
+        .analytics-summary { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+        .analytics-pill {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            background: rgba(46,134,222,0.15);
+            font-size: 10.5px;
+            text-transform: uppercase;
+        }
+        .analytics-status.ok { color: #10ac84; }
+        .analytics-status.err { color: #e74c3c; }
+        .analytics-empty, .analytics-error {
+            text-align: center;
+            padding: 24px;
+            color: var(--muted);
+        }
+        .analytics-run-detail {
+            display: none;
+            margin-top: 14px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .analytics-run-detail.open { display: block; }
+        .analytics-detail-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 12px;
+            background: var(--surface-2);
+            border-bottom: 1px solid var(--border);
+        }
+        .analytics-detail-close {
+            background: none;
+            border: none;
+            color: var(--muted);
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .analytics-detail-json {
+            margin: 0;
+            padding: 12px;
+            max-height: 280px;
+            overflow: auto;
+            font-family: var(--font-mono, monospace);
+            font-size: 11px;
+            line-height: 1.45;
+            white-space: pre-wrap;
+            word-break: break-word;
         }
 
         /* ── Tag Builder (generic, used by any tag-builder container) ── */
@@ -302,7 +508,6 @@
             display: flex;
             flex-direction: column;
             gap: 6px;
-            margin-top: 6px;
         }
         .project-checklist label {
             display: flex;
@@ -329,7 +534,7 @@
             <div class="brand-icon">A</div>
             <div class="brand-text">
                 <span class="brand-name">AutoRec</span>
-                <span class="brand-sub">Report Generator - v 3.0.1 (Beta)</span>
+                <span class="brand-sub">Report Generator - v 3.1.0 (Beta)</span>
             </div>
         </div>
 
@@ -347,7 +552,7 @@
 
                 <!-- Project Details panel (fixed) -->
                 <div class="tab-panel active" id="panel-project">
-                    <div class="field-group switch-group">
+                    <div class="field-group switch-group" style="display:none;">
                         <span class="field-label">Multi-project package?</span>
                         <label class="switch">
                             <input type="checkbox" id="switch-multiProject" class="switch-input" data-group="multiProject" />
@@ -356,19 +561,25 @@
                         <button type="button" class="toggle active" data-group="multiProject" data-value="No" hidden tabindex="-1"></button>
                         <button type="button" class="toggle" data-group="multiProject" data-value="Yes" hidden tabindex="-1"></button>
                     </div>
-                    <div class="field-group" id="projectIdGroup">
-                        <label class="field-label">Project ID</label>
+                    <div class="field-group" id="projectIdGroup" style="display:none;">
+                        <div class="field-heading">
+                            <label class="field-label">Project ID</label>
+                        </div>
                         <input id="projectId" class="field-input" placeholder="e.g. 99615753" autocomplete="off" />
                     </div>
                     <div class="field-group">
-                        <label class="field-label" id="projectNameLabel">Project Name <span class="optional">(optional)</span></label>
+                        <div class="field-heading">
+                            <label class="field-label" id="projectNameLabel">Project Name <span class="optional">(optional)</span></label>
+                        </div>
                         <input id="projectName" class="field-input" placeholder="e.g. Belovida" autocomplete="off" />
                     </div>
                     <div class="field-group">
-                        <label class="field-label">Project Address <span class="optional">(optional)</span></label>
+                        <div class="field-heading">
+                            <label class="field-label">Project Address <span class="optional">(optional)</span></label>
+                        </div>
                         <input id="projectAddress" class="field-input" placeholder="e.g. 123 Main St" autocomplete="off" />
                     </div>
-                    <div class="project-pairs-wrap" id="projectPairsWrap" style="display:none;">
+                    <div class="project-pairs-wrap" id="projectPairsWrap">
                         <div class="project-pairs-grid" id="projectPairsGrid">
                             <div class="project-pairs-header">
                                 <span>Project ID</span>
@@ -405,6 +616,7 @@
         <div class="dev-btn-wrap">
             <button class="dev-btn" id="devBtn">dev</button>
         </div>
+        <div class="sidebar-resize-handle" id="sidebarResizeHandle" title="Drag to resize"></div>
     </aside>
 
     <!-- MAIN PANEL -->
@@ -563,6 +775,11 @@
             <!-- Screen 1: Hub -->
             <div class="overlay-screen" id="devHub">
                 <div class="dev-hub-grid">
+                    <button class="hub-btn" id="goAnalyticsBtn">
+                        <div class="hub-btn-icon">📊</div>
+                        <div class="hub-btn-label">Usage Analytics</div>
+                        <div class="hub-btn-desc">Dashboard with per-run metrics, user filter, and run log.</div>
+                    </button>
                     <button class="hub-btn" id="goUsageLogsBtn">
                         <div class="hub-btn-icon">📈</div>
                         <div class="hub-btn-label">Usage Logs</div>
@@ -576,7 +793,41 @@
                 </div>
             </div>
 
-            <!-- Screen 2: Usage Logs editor -->
+            <!-- Screen 2: Analytics dashboard -->
+            <div class="overlay-screen" id="devAnalytics">
+                <div class="analytics-toolbar">
+                    <select id="analyticsUserFilter" class="analytics-select">
+                        <option value="">All users</option>
+                    </select>
+                    <select id="analyticsTypeFilter" class="analytics-select">
+                        <option value="">All types</option>
+                        <option value="report">Report only</option>
+                        <option value="pdf">PDF only</option>
+                    </select>
+                    <button type="button" class="dev-save-btn" id="analyticsRefreshBtn">Refresh</button>
+                </div>
+                <div id="analyticsOverview" class="analytics-overview"></div>
+                <div class="analytics-table-wrap">
+                    <table class="analytics-table">
+                        <thead>
+                            <tr>
+                                <th>Started</th>
+                                <th>User</th>
+                                <th>Type</th>
+                                <th>Project</th>
+                                <th>Summary</th>
+                                <th>Edits</th>
+                                <th>Status</th>
+                                <th>Duration</th>
+                            </tr>
+                        </thead>
+                        <tbody id="analyticsRunsBody"></tbody>
+                    </table>
+                </div>
+                <div id="analyticsRunDetail" class="analytics-run-detail"></div>
+            </div>
+
+            <!-- Screen 3: Usage Logs editor -->
             <div class="overlay-screen" id="devUsageLogs">
                 <textarea class="dev-edit-area" id="devUsageLogsArea" spellcheck="false"></textarea>
                 <div class="dev-save-note">Changes are saved to the server when you click Save or navigate away.</div>
@@ -586,7 +837,7 @@
                 </div>
             </div>
 
-            <!-- Screen 3: Reports & Requests editor -->
+            <!-- Screen 4: Reports & Requests editor -->
             <div class="overlay-screen" id="devRnrEditor">
                 <textarea class="dev-edit-area" id="devRnrArea" spellcheck="false"></textarea>
                 <div class="dev-save-note">Changes are saved to the server when you click Save or navigate away.</div>
@@ -600,6 +851,27 @@
     </div>
 </div>
 
+<!-- User identity modal -->
+<div class="identity-modal-backdrop" id="userIdentityModal">
+    <div class="identity-modal">
+        <h2 class="identity-modal-title">Who's using the tool?</h2>
+        <p class="identity-modal-sub">Enter your name so usage and preferences can be tracked for future presets.</p>
+        <input type="text" id="userIdentityInput" class="identity-modal-input field-input"
+               placeholder="Your name" autocomplete="name" spellcheck="false" />
+        <div class="identity-quick-row">
+            <span class="identity-quick-label">Quick pick:</span>
+            <button type="button" class="identity-quick-btn" data-user-quick="Alli">Alli</button>
+            <button type="button" class="identity-quick-btn" data-user-quick="Hana">Hana</button>
+        </div>
+        <button type="button" class="generate-btn identity-continue-btn" id="userIdentityContinue">
+            <span class="btn-label">Continue</span>
+        </button>
+        <p class="identity-modal-note">This helps improve the tool and eventually save your favorite settings. Data stays on this server.</p>
+    </div>
+</div>
+
+<script src="scripts/user-identity.js"></script>
+<script src="scripts/analytics-client.js"></script>
 <script src="scripts/constants/faq-data.js"></script>
 <script src="scripts/constants/carousel-data.js"></script>
 <script src="scripts/constants/dev-config.js"></script>
@@ -607,13 +879,16 @@
 <script src="scripts/tag-builder.js"></script>
 <script src="scripts/form-state.js"></script>
 <script src="scripts/project-pairs.js"></script>
+<script src="scripts/location-levels.js"></script>
 <script src="scripts/tab-manager.js"></script>
+<script src="scripts/sidebar-resize.js"></script>
 <script src="scripts/terminal.js"></script>
 <script src="scripts/generate-report.js"></script>
 <script src="scripts/help-overlay.js"></script>
 <script src="scripts/rnr-overlay.js"></script>
 <script src="scripts/changelog-overlay.js"></script>
 <script src="scripts/dev-overlay.js"></script>
+<script src="scripts/analytics-dashboard.js"></script>
 
 </body>
 </html>

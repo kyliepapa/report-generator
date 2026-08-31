@@ -2,6 +2,8 @@
  * Multi-project package UI: toggle, dynamic project ID/nickname pairs.
  */
 
+const MULTI_PROJECT_ONLY = true;
+
 const _pairChangeCallbacks = [];
 
 function onProjectPairsChange(fn) {
@@ -15,6 +17,7 @@ function _notifyChange() {
 }
 
 function isMultiProject() {
+    if (MULTI_PROJECT_ONLY) return true;
     const btn = document.querySelector('button.toggle.active[data-group="multiProject"]');
     return btn && btn.dataset.value === 'Yes';
 }

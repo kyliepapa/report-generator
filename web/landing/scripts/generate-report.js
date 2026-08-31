@@ -14,64 +14,78 @@ function resetGenerateBtn() {
     btn.querySelector('.btn-label').textContent = 'Generate Report';
 }
 
-function getTagsFor(id) {
-    const el = document.getElementById(id);
+function getTagsFor(id, panelEl) {
+    const root = panelEl || document;
+    const el = root.querySelector ? root.querySelector(`#${id}`) : document.getElementById(id);
     return el && el._getTags ? el._getTags() : [];
 }
 
-function activeToggleValue(group) {
-    const btn = document.querySelector(`button.toggle.active[data-group="${group}"]`);
+function activeToggleValue(group, panelEl) {
+    const root = panelEl || document;
+    const btn = root.querySelector
+        ? root.querySelector(`button.toggle.active[data-group="${group}"]`)
+        : document.querySelector(`button.toggle.active[data-group="${group}"]`);
     return btn ? btn.dataset.value : null;
 }
 
-function buildAquamizerPayload(id) {
-    const baths = Array.from(document.querySelectorAll(`#aq-${id} .bath`))
+function buildAquamizerPayload(id, panelEl) {
+    const baths = Array.from(panelEl.querySelectorAll(`#aq-${id} .bath`))
         .map(b => b.value.trim())
         .filter(b => b !== '');
-    const specialRooms = getTagsFor(`specialRooms-${id}Builder`);
+    const specialRooms = getTagsFor(`specialRooms-${id}Builder`, panelEl);
 
     return {
-        multi_bath: activeToggleValue(`multi-${id}`),
-        label_format: activeToggleValue(`format-${id}`),
+        multi_bath: activeToggleValue(`multi-${id}`, panelEl),
+        label_format: activeToggleValue(`format-${id}`, panelEl),
         bath_names: baths.join(','),
         special_rooms: specialRooms.join(','),
     };
 }
 
-function buildLightingPayload(id) {
-    const serialTag = document.querySelector(`#lt-${id} .serial-tag`).value.trim();
+function buildLightingPayload(id, panelEl) {
+    const serialTags = getTagsFor(`lightingSerialTags-${id}Builder`, panelEl);
+    const locationLevels = window.getLocationLevels
+        ? window.getLocationLevels(id).map(level => ({
+            tags: level.tags.join(','),
+            numeric: level.numeric,
+        }))
+        : [];
 
     return {
-        installers: getTagsFor(`installers-${id}Builder`).join(','),
-        locations: getTagsFor(`locations-${id}Builder`).join(','),
-        sublocations: getTagsFor(`sublocations-${id}Builder`).join(','),
-        fixture_types: getTagsFor(`fixtureTypes-${id}Builder`).join(','),
-        phases: getTagsFor(`phases-${id}Builder`).join(','),
-        serial_tag: serialTag,
-        loc_numeric: activeToggleValue(`locNumeric-${id}`),
-        subloc_numeric: activeToggleValue(`sublocNumeric-${id}`),
-        loc_bigger_num: activeToggleValue(`locBiggerNum-${id}`),
+        installers: getTagsFor(`installers-${id}Builder`, panelEl).join(','),
+        location_levels: locationLevels,
+        fixture_types: getTagsFor(`fixtureTypes-${id}Builder`, panelEl).join(','),
+        phases: getTagsFor(`phases-${id}Builder`, panelEl).join(','),
+        serial_tag: serialTags.join(','),
+        loc_bigger_num: activeToggleValue(`locBiggerNum-${id}`, panelEl),
     };
 }
 
-function buildHeatPumpPayload(id) {
-    const serialTag = document.querySelector(`#hp-${id} .serial-tag`).value.trim();
+function buildHeatPumpPayload(id, panelEl) {
+    const serialTags = getTagsFor(`heatPumpSerialTags-${id}Builder`, panelEl);
     return {
-        fixtures: getTagsFor(`fixtures-${id}Builder`).join(','),
-        serial_tag: serialTag,
-        allow_competing_fixture_tags: activeToggleValue(`allowCompetingFixtures-${id}`) === 'Yes',
-        auto_assign_lone_serial_to_before: activeToggleValue(`autoAssignLoneSerial-${id}`) === 'Yes',
+        fixtures: getTagsFor(`fixtures-${id}Builder`, panelEl).join(','),
+        serial_tag: serialTags.join(','),
+        allow_competing_fixture_tags: activeToggleValue(`allowCompetingFixtures-${id}`, panelEl) === 'Yes',
+        auto_assign_lone_serial_to_before: activeToggleValue(`autoAssignLoneSerial-${id}`, panelEl) === 'Yes',
     };
 }
 
-function buildSubcontractedPayload(id) {
-    const hashEl = document.querySelector(`#sc-${id} .subcontract-hash`);
-    const markEl = document.querySelector(`#sc-${id} .subcontract-mark`);
-    const keySource = (activeToggleValue(`subconKey-${id}`) || 'Tags').toLowerCase();
+function buildSubcontractedPayload(id, panelEl) {
+    const hashEl = panelEl.querySelector(`#sc-${id} .subcontract-hash`);
+    const markEl = panelEl.querySelector(`#sc-${id} .subcontract-mark`);
+    const keySource = (activeToggleValue(`subconKey-${id}`, panelEl) || 'Tags').toLowerCase();
     return {
         hash: hashEl ? hashEl.value.trim() : '',
         measure_mark: markEl ? markEl.value.trim() : '',
         key_source: keySource,
+    };
+}
+
+function buildManualArrangePayload(id, panelEl) {
+    return {
+        pre_sort_buckets: getTagsFor(`preSortBuckets-${id}Builder`, panelEl),
+        allow_conflicting_tags: activeToggleValue(`allowConflictingTags-${id}`, panelEl) !== 'No',
     };
 }
 
@@ -123,16 +137,19 @@ function validateMultiProject(configured, errors) {
 }
 
 function buildMeasurePayload(tab) {
-    const measureName = tab.panelEl.querySelector('.measure-name').value.trim();
+    const panelEl = tab.panelEl;
+    const measureName = panelEl.querySelector('.measure-name').value.trim();
     let typePayload = {};
     if (tab.type === 'aquamizer') {
-        typePayload = buildAquamizerPayload(tab.id);
+        typePayload = buildAquamizerPayload(tab.id, panelEl);
     } else if (tab.type === 'lighting') {
-        typePayload = buildLightingPayload(tab.id);
+        typePayload = buildLightingPayload(tab.id, panelEl);
     } else if (tab.type === 'heat_pump') {
-        typePayload = buildHeatPumpPayload(tab.id);
+        typePayload = buildHeatPumpPayload(tab.id, panelEl);
     } else if (tab.type === 'subcontracted') {
-        typePayload = buildSubcontractedPayload(tab.id);
+        typePayload = buildSubcontractedPayload(tab.id, panelEl);
+    } else if (tab.type === 'manual_arrange') {
+        typePayload = buildManualArrangePayload(tab.id, panelEl);
     }
 
     const payload = {
@@ -142,8 +159,8 @@ function buildMeasurePayload(tab) {
         ...typePayload,
     };
 
-    if (tab.type !== 'subcontracted') {
-        payload.measure_keywords = getTagsFor(`measureKeywords-${tab.id}Builder`);
+    if (tab.type !== 'subcontracted' && tab.type !== 'manual_arrange') {
+        payload.measure_keywords = getTagsFor(`measureKeywords-${tab.id}Builder`, panelEl);
     }
 
     if (window.isMultiProject && window.isMultiProject()) {
@@ -155,12 +172,49 @@ function buildMeasurePayload(tab) {
     return payload;
 }
 
+function validateManualArrangeProjects(configured, errors) {
+    const maProjects = new Map();
+    const otherProjects = new Map();
+
+    configured.forEach(tab => {
+        const checked = window.getCheckedProjectIds
+            ? window.getCheckedProjectIds(tab.id)
+            : [];
+        checked.forEach(pid => {
+            if (tab.type === 'manual_arrange') {
+                if (otherProjects.has(pid)) {
+                    errors.push(
+                        `Project cannot be assigned to both Manual Arrange and another measure type.`
+                    );
+                }
+                maProjects.set(pid, tab.id);
+            } else {
+                if (maProjects.has(pid)) {
+                    errors.push(
+                        `Project cannot be assigned to both Manual Arrange and another measure type.`
+                    );
+                }
+                otherProjects.set(pid, tab.id);
+            }
+        });
+    });
+
+    if (!window.isMultiProject || !window.isMultiProject()) {
+        const maTabs = configured.filter(t => t.type === 'manual_arrange');
+        if (maTabs.length && configured.length > 1) {
+            errors.push(
+                'Manual Arrange cannot be combined with other measures in a single-project run.'
+            );
+        }
+    }
+}
+
 function validateSubcontractedCrossTab(configured, errors) {
     const marks = {};
     const hashOnly = {};
 
     configured.filter(t => t.type === 'subcontracted').forEach(tab => {
-        const { hash, measure_mark: mark } = buildSubcontractedPayload(tab.id);
+        const { hash, measure_mark: mark } = buildSubcontractedPayload(tab.id, tab.panelEl);
         if (mark) {
             const mk = mark.toUpperCase();
             if (marks[mk]) {
@@ -178,38 +232,45 @@ function validateSubcontractedCrossTab(configured, errors) {
     });
 }
 
-function validateMeasure(type, id, errors) {
+function validateMeasure(type, id, panelEl, errors) {
     if (type === 'aquamizer') {
-        if (!activeToggleValue(`multi-${id}`)) errors.push('Select whether units have multiple bathrooms.');
-        if (!activeToggleValue(`format-${id}`)) errors.push('Select a unit label format.');
+        if (!activeToggleValue(`multi-${id}`, panelEl)) errors.push('Select whether units have multiple bathrooms.');
+        if (!activeToggleValue(`format-${id}`, panelEl)) errors.push('Select a unit label format.');
     } else if (type === 'lighting') {
-        const locNumeric = activeToggleValue(`locNumeric-${id}`);
-        const sublocNumeric = activeToggleValue(`sublocNumeric-${id}`);
-        if (locNumeric !== 'Yes' && getTagsFor(`locations-${id}Builder`).length === 0) {
-            errors.push('Add at least one Lighting location.');
+        const levels = window.getLocationLevels ? window.getLocationLevels(id) : [];
+        if (levels.length === 0) {
+            errors.push('Add at least one Lighting location level.');
         }
-        if (getTagsFor(`fixtureTypes-${id}Builder`).length === 0) errors.push('Add at least one Lighting fixture type.');
-        if (getTagsFor(`phases-${id}Builder`).length === 0) errors.push('Add at least one Lighting phase.');
-        if (!document.querySelector(`#lt-${id} .serial-tag`).value.trim()) errors.push('Enter a serial tag for Lighting.');
-        if (!locNumeric) errors.push('Select whether Lighting locations are numbered.');
-        if (!sublocNumeric) errors.push('Select whether Lighting sublocations are numbered.');
-        if (locNumeric === 'Yes' && sublocNumeric === 'Yes' && !activeToggleValue(`locBiggerNum-${id}`)) {
-            errors.push('Select the Lighting location/sublocation sort answer.');
+        levels.forEach((level, idx) => {
+            const n = idx + 1;
+            if (!level.numeric) {
+                errors.push(`Select whether Location Level ${n} uses numbered locations.`);
+            }
+            if (level.numeric !== 'Yes' && level.tags.length === 0) {
+                errors.push(`Add at least one tag for Location Level ${n}, or enable numbered locations.`);
+            }
+        });
+        const numericCount = levels.filter(l => l.numeric === 'Yes').length;
+        if (numericCount >= 2 && !activeToggleValue(`locBiggerNum-${id}`, panelEl)) {
+            errors.push('Select whether higher location levels have larger numbers.');
         }
+        if (getTagsFor(`fixtureTypes-${id}Builder`, panelEl).length === 0) errors.push('Add at least one Lighting fixture type.');
+        if (getTagsFor(`phases-${id}Builder`, panelEl).length === 0) errors.push('Add at least one Lighting phase.');
     } else if (type === 'heat_pump') {
-        if (!document.querySelector(`#hp-${id} .serial-tag`).value.trim()) errors.push('Enter a serial tag for Single-Unit Heat Pump.');
     } else if (type === 'water_meter') {
         errors.push('Water Meter is not supported yet — pick a different measure type.');
     } else if (type === 'subcontracted') {
-        const hash = document.querySelector(`#sc-${id} .subcontract-hash`).value.trim();
-        const mark = document.querySelector(`#sc-${id} .subcontract-mark`).value.trim();
-        const keySource = (activeToggleValue(`subconKey-${id}`) || 'Tags').toLowerCase();
-        if (!activeToggleValue(`subconKey-${id}`)) errors.push('Select whether subcon keys are in photo tags or descriptions.');
+        const hash = panelEl.querySelector(`#sc-${id} .subcontract-hash`).value.trim();
+        const mark = panelEl.querySelector(`#sc-${id} .subcontract-mark`).value.trim();
+        const keySource = (activeToggleValue(`subconKey-${id}`, panelEl) || 'Tags').toLowerCase();
+        if (!activeToggleValue(`subconKey-${id}`, panelEl)) errors.push('Select whether subcon keys are in photo tags or descriptions.');
         if (hash.length !== 1) errors.push('Subcontracted measure requires a single-character hash.');
         if (mark && mark.length !== 1) errors.push('Subcontracted measure mark must be a single character.');
         if (keySource !== 'tags' && keySource !== 'description') {
             errors.push('Photo identification must be Tags or Description.');
         }
+    } else if (type === 'manual_arrange') {
+        // Pre-sort buckets optional; no extra required fields.
     }
 }
 
@@ -217,6 +278,10 @@ document.getElementById('generateBtn').addEventListener('click', () => {
     const errorDiv = document.getElementById('error');
     errorDiv.textContent = '';
     const errors = [];
+
+    if (window.AutoRecAnalytics && !window.AutoRecAnalytics.isReady()) {
+        errors.push('Please enter your name to continue.');
+    }
 
     const projectId = document.getElementById('projectId').value.trim();
     const projectName = document.getElementById('projectName').value.trim();
@@ -229,11 +294,15 @@ document.getElementById('generateBtn').addEventListener('click', () => {
     const configured = measureTabs.filter(t => t.type);
     if (configured.length === 0) errors.push('Select a Measure Type for at least one measure tab.');
 
-    configured.forEach(t => validateMeasure(t.type, t.id, errors));
+    configured.forEach(t => validateMeasure(t.type, t.id, t.panelEl, errors));
     validateSubcontractedCrossTab(configured, errors);
+    validateManualArrangeProjects(configured, errors);
     validateMultiProject(configured, errors);
 
     if (errors.length) {
+        if (window.AutoRecAnalytics && window.AutoRecAnalytics.recordValidationError) {
+            window.AutoRecAnalytics.recordValidationError();
+        }
         errorDiv.textContent = errors[0];
         return;
     }
@@ -249,6 +318,7 @@ document.getElementById('generateBtn').addEventListener('click', () => {
     const payload = {
         project_address: projectAddress,
         measures: configured.map(buildMeasurePayload),
+        analytics: window.AutoRecAnalytics ? window.AutoRecAnalytics.buildPayload() : {},
     };
 
     if (multi) {
@@ -270,7 +340,7 @@ document.getElementById('generateBtn').addEventListener('click', () => {
             if (!r.ok) throw new Error(`HTTP ${r.status}`);
             return r.json();
         })
-        .then(({ job_id, package_id }) => {
+        .then(({ job_id, package_id, run_id }) => {
             termLine('Job started, processing...');
 
             pollJob(
@@ -289,6 +359,14 @@ document.getElementById('generateBtn').addEventListener('click', () => {
                         urlParams.set('project_id', projectId);
                         urlParams.set('project_name', projectName || projectId);
                     }
+                    if (projectAddress) {
+                        urlParams.set('project_address', projectAddress);
+                    }
+                    if (run_id) urlParams.set('run_id', run_id);
+                    const ctx = window.AutoRecAnalytics ? window.AutoRecAnalytics.getContext() : {};
+                    if (ctx.user_id) urlParams.set('user_id', ctx.user_id);
+                    if (ctx.display_name) urlParams.set('display_name', ctx.display_name);
+                    if (ctx.session_id) urlParams.set('session_id', ctx.session_id);
                     openBtn.onclick = () => window.open(`/report?${urlParams}`, '_blank');
                     actions.style.display = 'flex';
                 },

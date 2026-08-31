@@ -1,5 +1,6 @@
 /** Changelog overlay: fetches and displays server-side changelog text. */
 document.getElementById('changelogBtn').addEventListener('click', async () => {
+    if (window.AutoRecAnalytics) window.AutoRecAnalytics.markChangelogViewed();
     const content = document.getElementById('changelogContent');
     content.textContent = 'Loading…';
     openOverlay('changelogOverlay');
