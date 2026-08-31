@@ -46,18 +46,45 @@ def make_photo_card_html(photo_data, idx=None, zone_id=None):
     img_style = "" if has_image else "filter: grayscale(100%); opacity: 0.6;"
 
     tags_json = json.dumps(all_tags)
-    geo_label = f"{latitude:.4f}, {longitude:.4f}" if (latitude and longitude) else ""
-    geo_url   = f"https://www.google.com/maps/search/?api=1&query={latitude},{longitude}" if (latitude and longitude) else ""
+    original_url = photo_data.get("original_url") or url
+    has_geo = latitude is not None and longitude is not None
+    try:
+        geo_label = f"{float(latitude):.4f}, {float(longitude):.4f}" if has_geo else ""
+        geo_url = (
+            f"https://www.google.com/maps/search/?api=1&query={float(latitude)},{float(longitude)}"
+            if has_geo else ""
+        )
+    except (TypeError, ValueError):
+        has_geo = False
+        geo_label = ""
+        geo_url = ""
 
-    html  = f'<div class="photo-card" draggable="true" data-photo-url="{html_module.escape(url, quote=True)}">'
+    esc_url = html_module.escape(url, quote=True)
+    esc_orig = html_module.escape(original_url, quote=True)
+    esc_ts = html_module.escape(timestamp_str, quote=True)
+    esc_geo_label = html_module.escape(geo_label, quote=True)
+    esc_geo_url = html_module.escape(geo_url, quote=True)
+    esc_tags = html_module.escape(tags_json, quote=True)
+
+    html  = (
+        f'<div class="photo-card" draggable="true" data-photo-url="{esc_url}"'
+        f' data-original-url="{esc_orig}" data-timestamp="{esc_ts}"'
+        f' data-geo-label="{esc_geo_label}" data-geo-url="{esc_geo_url}"'
+        f' data-tags="{esc_tags}" data-tags-default="{esc_tags}">'
+    )
     if idx is not None:
         html += f'<span class="photo-index">{idx}</span>'
-    html += f'<img src="{url}" loading="lazy" style="{img_style}" onclick=\'openLightbox({json.dumps(url)},{tags_json},{json.dumps(timestamp_str)},{json.dumps(geo_label)},{json.dumps(geo_url)})\'>'
+    html += (
+        f'<div class="photo-img-wrap">'
+        f'<img src="{url}" loading="lazy" style="{img_style}"'
+        f' onclick="openLightboxFromCard(this.closest(\'.photo-card\'))">'
+        f'</div>'
+    )
     html += '<div class="photo-metadata">'
     html += f'<div class="timestamp">📷 {timestamp_str}</div>'
     if not has_image:
         html += '<div class="geotag" style="color:#e74c3c;">⚠️ No image available</div>'
-    if latitude and longitude:
+    if has_geo:
         html += f'<div class="geotag">📍 <a class="geotag-link" href="{geo_url}" target="_blank">{geo_label}</a></div>'
     else:
         html += '<div class="geotag">📍 No location data</div>'
@@ -123,6 +150,9 @@ def _make_head(title, extra_css=""):
 
 def _make_tail():
     return (
+        f"{assets.get_analytics_context_js()}"
+        f"{assets.get_analytics_edits_js()}"
+        f"{assets.get_photo_session_js()}"
         f"{assets.get_lightbox_js()}"
         f"{assets.get_pdf_progress_js()}"
         f"{assets.get_sortable_js()}"

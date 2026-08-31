@@ -11,6 +11,16 @@ let _undoStack     = [];     // [{card, fromZone, fromIndex, toZone, toIndex}] o
 window._editCount  = 0;
 let _sortableInstances = new Map();
 let _sortableUndoSnapshot = null;
+let _manualArrangeUndoSnapshot = null;
+
+const MANUAL_ARRANGE_SORT_MODE = 'manual_arrange_sequence';
+
+const SORTABLE_SCROLL_OPTS = {
+    scroll: true,
+    scrollSensitivity: 60,
+    scrollSpeed: 20,
+    bubbleScroll: true,
+};
 
 // ── Auto-scroll during drag ────────────────────────────────
 let _scrollDir = 0; // -1 = up, 1 = down, 0 = none
@@ -53,6 +63,9 @@ editBtn.addEventListener('click', toggleEditMode);
 
 function toggleEditMode() {
     window._editMode = !window._editMode;
+    if (window._editMode && window.AutoRecReportAnalytics) {
+        window.AutoRecReportAnalytics.recordEditMode();
+    }
     document.body.classList.toggle('edit-mode', window._editMode);
     editBtn.classList.toggle('active', window._editMode);
     editBtn.textContent = window._editMode ? '✏️ Editing On' : '✏️ Edit Photos';
@@ -60,7 +73,7 @@ function toggleEditMode() {
         ? 'Drag photos between zones · Reorder subcontract photos/headings · Ctrl+Z to undo'
         : 'Enable to rearrange photos';
     if (window._editMode) {
-        initSubcontractSortables();
+        initAllSortables();
     } else {
         destroySubcontractSortables();
     }
@@ -82,6 +95,7 @@ undoBtn.addEventListener('click', undoLast);
 
 function undoLast() {
     if (!_undoStack.length) return;
+    if (window.AutoRecReportAnalytics) window.AutoRecReportAnalytics.recordUndo();
     const op = _undoStack.pop();
 
     if (op.type === 'sortable') {
@@ -89,6 +103,16 @@ function undoLast() {
         window._editCount = Math.max(0, window._editCount - 1);
         refreshBadge();
         syncPhotoNumbers();
+        return;
+    }
+
+    if (op.type === 'sortable-cross') {
+        op.grids.forEach(({ grid, order }) => order.forEach(el => grid.appendChild(el)));
+        window._editCount = Math.max(0, window._editCount - 1);
+        refreshBadge();
+        syncPhotoNumbers();
+        refreshZones();
+        syncCounters();
         return;
     }
 
@@ -113,6 +137,7 @@ function undoLast() {
 resetBtn.addEventListener('click', function() {
     if (!_undoStack.length) return;
     if (!confirm('Reset all photo edits and restore the original layout?')) return;
+    if (window.AutoRecReportAnalytics) window.AutoRecReportAnalytics.recordReset();
     while (_undoStack.length) undoLast();
 });
 
@@ -157,11 +182,79 @@ function syncPhotoNumbers() {
     });
 }
 
-function initSubcontractSortables() {
+function _manualArrangeMeasureIdForPane(pane) {
+    if (!pane) return null;
+    if (pane.dataset.sortMode === MANUAL_ARRANGE_SORT_MODE) {
+        return pane.id.startsWith('tab-') ? pane.id.slice(4) : null;
+    }
+    if (!pane.id.startsWith('tab-')) return null;
+    const tabId = pane.id.slice(4);
+    const btn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
+    if (btn && btn.dataset.sortMode === MANUAL_ARRANGE_SORT_MODE) return tabId;
+    return null;
+}
+
+function _isManualArrangeStagingGrid(grid) {
+    if (!grid || !grid.classList.contains('subcontract-grid')) return false;
+    return !!_manualArrangeMeasureIdForPane(grid.closest('.tab-pane'));
+}
+
+function _manualArrangePaneGrids(pane) {
+    const staging = pane.querySelector('.subcontract-grid.photo-grid');
+    const buckets = [...pane.querySelectorAll('.manual-arrange-bucket .photo-grid')];
+    return { staging, buckets };
+}
+
+function _snapshotManualArrangeGrids(pane) {
+    const { staging, buckets } = _manualArrangePaneGrids(pane);
+    const grids = [staging, ...buckets].filter(Boolean);
+    return {
+        type: 'sortable-cross',
+        grids: grids.map(grid => ({ grid, order: [...grid.children] })),
+    };
+}
+
+function _manualArrangeGridsChanged(snapshot) {
+    return snapshot.grids.some(({ grid, order }) =>
+        order.some((el, i) => grid.children[i] !== el)
+    );
+}
+
+function _sortableEndAnalytics(fromGrid, toGrid) {
+    if (!window.AutoRecReportAnalytics) return;
+    const fromZ = fromGrid ? fromGrid.dataset.zone || '' : '';
+    const toZ = toGrid ? toGrid.dataset.zone || '' : '';
+    if (fromZ === toZ) {
+        window.AutoRecReportAnalytics.recordReorder(toZ);
+    } else {
+        window.AutoRecReportAnalytics.recordMove(fromZ, toZ);
+    }
+}
+
+function _usesSortableDrag(card) {
+    if (!card) return false;
+    if (card.closest('.manual-arrange-bucket')) return true;
+    if (card.closest('.subcontract-grid')) return true;
+    return false;
+}
+
+function _setCardDraggable(card) {
+    card.setAttribute('draggable', _usesSortableDrag(card) ? 'false' : 'true');
+}
+
+function initAllSortables() {
     if (typeof Sortable === 'undefined') return;
     destroySubcontractSortables();
+    initSubcontractSortables();
+    initManualArrangeSortables();
+}
+
+function initSubcontractSortables() {
     document.querySelectorAll('.subcontract-grid').forEach(grid => {
+        if (_isManualArrangeStagingGrid(grid)) return;
+
         const instance = Sortable.create(grid, {
+            ...SORTABLE_SCROLL_OPTS,
             animation: 150,
             draggable: '.photo-card, .subcontract-heading',
             ghostClass: 'sortable-ghost',
@@ -176,6 +269,7 @@ function initSubcontractSortables() {
                 if (changed) {
                     _undoStack.push(_sortableUndoSnapshot);
                     window._editCount++;
+                    _sortableEndAnalytics(grid, grid);
                     refreshBadge();
                 }
                 _sortableUndoSnapshot = null;
@@ -186,10 +280,79 @@ function initSubcontractSortables() {
     });
 }
 
+function initManualArrangeSortables() {
+    document.querySelectorAll('.tab-pane').forEach(pane => {
+        const measureId = _manualArrangeMeasureIdForPane(pane);
+        if (!measureId) return;
+
+        const { staging, buckets } = _manualArrangePaneGrids(pane);
+        if (!staging) return;
+
+        const group = {
+            name: 'manual-arrange-' + measureId,
+            pull: true,
+            put(to, from, dragEl) {
+                if (dragEl.classList.contains('subcontract-heading')) {
+                    return to.el.classList.contains('subcontract-grid');
+                }
+                return true;
+            },
+        };
+
+        let dragFromGrid = null;
+
+        const sortableOpts = {
+            ...SORTABLE_SCROLL_OPTS,
+            animation: 150,
+            group,
+            ghostClass: 'sortable-ghost',
+            chosenClass: 'sortable-chosen',
+            disabled: !window._editMode,
+            onStart(evt) {
+                dragFromGrid = evt.from;
+                _manualArrangeUndoSnapshot = _snapshotManualArrangeGrids(pane);
+            },
+            onEnd(evt) {
+                const changed = _manualArrangeUndoSnapshot
+                    && _manualArrangeGridsChanged(_manualArrangeUndoSnapshot);
+                if (changed) {
+                    _undoStack.push(_manualArrangeUndoSnapshot);
+                    window._editCount++;
+                    _sortableEndAnalytics(dragFromGrid, evt.to);
+                    refreshBadge();
+                }
+                _manualArrangeUndoSnapshot = null;
+                dragFromGrid = null;
+                syncPhotoNumbers();
+                refreshZones();
+                syncCounters();
+            },
+        };
+
+        const stagingInstance = Sortable.create(staging, {
+            ...sortableOpts,
+            draggable: '.photo-card, .subcontract-heading',
+        });
+        _sortableInstances.set(staging, stagingInstance);
+
+        buckets.forEach(bucketGrid => {
+            bucketGrid.querySelectorAll('.photo-card').forEach(card => {
+                card.setAttribute('draggable', 'false');
+            });
+            const instance = Sortable.create(bucketGrid, {
+                ...sortableOpts,
+                draggable: '.photo-card',
+            });
+            _sortableInstances.set(bucketGrid, instance);
+        });
+    });
+}
+
 function destroySubcontractSortables() {
     _sortableInstances.forEach(instance => instance.destroy());
     _sortableInstances.clear();
     _sortableUndoSnapshot = null;
+    _manualArrangeUndoSnapshot = null;
 }
 
 // Ensure every photo-grid has a drop-empty-hint sibling
@@ -215,7 +378,7 @@ function refreshZones() {
 document.addEventListener('dragstart', function(e) {
     if (!window._editMode) return;
     const card = e.target.closest('.photo-card');
-    if (!card || card.closest('.subcontract-grid')) return;
+    if (!card || _usesSortableDrag(card)) return;
 
     _dragging       = card;
     _sourceZone     = card.closest('.photo-grid');
@@ -325,6 +488,16 @@ document.addEventListener('drop', function(e) {
         grid.appendChild(_dragging);
     }
 
+    if (window.AutoRecReportAnalytics) {
+        const fromZ = fromZone ? fromZone.dataset.zone : '';
+        const toZ = toZone ? toZone.dataset.zone : '';
+        if (fromZ === toZ) {
+            window.AutoRecReportAnalytics.recordReorder(toZ);
+        } else {
+            window.AutoRecReportAnalytics.recordMove(fromZ, toZ);
+        }
+    }
+
     // Visual feedback
     const droppedCard = _dragging;
     droppedCard.classList.add('just-dropped');
@@ -339,11 +512,7 @@ document.addEventListener('drop', function(e) {
 // ── Make all cards draggable in edit mode ───────────────────
 // We set draggable=true on all .photo-card elements at init,
 // but only the dragstart handler actually fires when editMode is off.
-document.querySelectorAll('.photo-card').forEach(card => {
-    if (!card.closest('.subcontract-grid')) {
-        card.setAttribute('draggable', 'true');
-    }
-});
+document.querySelectorAll('.photo-card').forEach(_setCardDraggable);
 
 // ── Subcontracted: heading injection + photo selection ───────
 let _selectedPhoto = null;
@@ -451,6 +620,7 @@ function injectHeadingAfter(anchor) {
     window._editCount++;
     refreshBadge();
     syncPhotoNumbers();
+    if (window.AutoRecReportAnalytics) window.AutoRecReportAnalytics.recordHeadingInjection();
 }
 
 if (injectHeadingBtn) {
@@ -519,6 +689,7 @@ document.addEventListener('dblclick', function(e) {
     heading.className = 'subcontract-heading weight-' + weight;
     window._editCount++;
     refreshBadge();
+    if (window.AutoRecReportAnalytics) window.AutoRecReportAnalytics.recordHeadingEdit();
 });
 
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -645,11 +816,90 @@ function injectEmptyZones() {
     });
 
     // Make all new cards draggable and refresh zones
-    document.querySelectorAll('.photo-card').forEach(card => {
-        if (!card.closest('.subcontract-grid')) {
-            card.setAttribute('draggable', 'true');
-        }
-    });
+    document.querySelectorAll('.photo-card').forEach(_setCardDraggable);
+    if (window._editMode) {
+        initAllSortables();
+    }
     refreshZones();
     syncCounters();
 }
+
+// ── Collapsible toolbar options + Show Tags ─────────────────
+const SHOW_TAGS_STORAGE_KEY = 'autorec_show_photo_tags';
+
+function _parseCardTags(card) {
+    const raw = card.dataset.tags || card.dataset.tagsDefault || '[]';
+    try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function refreshPhotoTagDisplay(card) {
+    if (!card) return;
+    let row = card.querySelector('.photo-tags-display');
+    if (!row) {
+        row = document.createElement('div');
+        row.className = 'photo-tags-display';
+        const meta = card.querySelector('.photo-metadata');
+        if (meta) meta.appendChild(row);
+        else card.appendChild(row);
+    }
+    const tags = _parseCardTags(card);
+    if (!tags.length) {
+        row.innerHTML = '<span class="photo-tag-chip">No tags</span>';
+        return;
+    }
+    row.innerHTML = tags.map(t => (
+        `<span class="photo-tag-chip">${String(t).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>`
+    )).join('');
+}
+
+function refreshAllPhotoTagDisplays() {
+    document.querySelectorAll('.photo-card[data-photo-url]').forEach(refreshPhotoTagDisplay);
+}
+
+function setShowPhotoTags(enabled) {
+    document.body.classList.toggle('show-photo-tags', !!enabled);
+    try {
+        sessionStorage.setItem(SHOW_TAGS_STORAGE_KEY, enabled ? '1' : '0');
+    } catch (e) { /* ignore */ }
+    if (enabled) refreshAllPhotoTagDisplays();
+}
+
+(function initToolbarOptions() {
+    const toggleBtn = document.getElementById('toolbar-options-toggle');
+    const panel = document.getElementById('toolbar-options-panel');
+    const showTagsCb = document.getElementById('show-tags-toggle');
+
+    if (toggleBtn && panel) {
+        toggleBtn.addEventListener('click', () => {
+            const open = panel.hasAttribute('hidden');
+            if (open) {
+                panel.removeAttribute('hidden');
+                toggleBtn.setAttribute('aria-expanded', 'true');
+                toggleBtn.textContent = '▴ Options';
+            } else {
+                panel.setAttribute('hidden', '');
+                toggleBtn.setAttribute('aria-expanded', 'false');
+                toggleBtn.textContent = '▾ Options';
+            }
+        });
+    }
+
+    let initialShowTags = false;
+    try {
+        initialShowTags = sessionStorage.getItem(SHOW_TAGS_STORAGE_KEY) === '1';
+    } catch (e) { /* ignore */ }
+
+    if (showTagsCb) {
+        showTagsCb.checked = initialShowTags;
+        showTagsCb.addEventListener('change', () => setShowPhotoTags(showTagsCb.checked));
+    }
+    setShowPhotoTags(initialShowTags);
+
+    window.refreshPhotoTagDisplay = refreshPhotoTagDisplay;
+    window.refreshAllPhotoTagDisplays = refreshAllPhotoTagDisplays;
+})();

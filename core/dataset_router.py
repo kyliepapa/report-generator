@@ -75,13 +75,10 @@ def run_lighting(photos, **kwargs):
     return run(
         photos,
         installers=kwargs["installers"],
-        locations=kwargs["locations"],
-        sublocations=kwargs["sublocations"],
+        location_levels=kwargs["location_levels"],
         fixture_types=kwargs["fixture_types"],
         phases=kwargs["phases"],
         serial_tag=kwargs["serial_tag"],
-        loc_numeric=kwargs["loc_numeric"],
-        subloc_numeric=kwargs["subloc_numeric"],
         loc_bigger_num=kwargs["loc_bigger_num"],
     )
 
@@ -109,12 +106,22 @@ def run_heat_pump(photos, **kwargs):
     )
 
 
+def run_manual_arrange(photos, **kwargs):
+    from datasets.manual_arrange.adapter import run
+    return run(
+        photos,
+        pre_sort_buckets=kwargs.get("pre_sort_buckets"),
+        allow_conflicting_tags=kwargs.get("allow_conflicting_tags", True),
+    )
+
+
 ROUTES = {
     "plumbing": run_plumbing,
     "water_meter": run_water_meter,
     "lighting": run_lighting,
     "subcontracted": run_subcontracted,
     "heat_pump": run_heat_pump,
+    "manual_arrange": run_manual_arrange,
 }
 
 

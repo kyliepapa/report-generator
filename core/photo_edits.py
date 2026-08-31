@@ -225,7 +225,7 @@ def apply_lighting_photo_edits(structured, photo_edits, measure_id=None):
             idx = 2
             curr_group = loc
 
-            if parts[idx] == "sub" and idx + 1 < len(parts):
+            while idx < len(parts) and parts[idx] == "sub" and idx + 1 < len(parts):
                 sub = _match_name(curr_group.get("sublocations", []), parts[idx + 1])
                 if not sub:
                     logger.warning(
@@ -233,9 +233,13 @@ def apply_lighting_photo_edits(structured, photo_edits, measure_id=None):
                         zone_id,
                         parts[idx + 1],
                     )
-                    continue
+                    curr_group = None
+                    break
                 curr_group = sub
                 idx += 2
+
+            if curr_group is None:
+                continue
 
             if idx >= len(parts):
                 continue
@@ -317,6 +321,7 @@ def apply_lighting_photo_edits(structured, photo_edits, measure_id=None):
 
 SUBCONTRACTED_SORT_KEY = "subcontracted_sequence"
 HEAT_PUMP_SORT_KEY = "heat_pump_phase_serial_buckets"
+MANUAL_ARRANGE_SORT_KEY = "manual_arrange_sequence"
 
 
 def apply_heat_pump_photo_edits(structured, photo_edits, measure_id=None):
@@ -411,6 +416,80 @@ def apply_subcontracted_photo_edits(structured, photo_edits, heading_edits=None,
         structured["items"] = new_items
 
 
+def apply_manual_arrange_photo_edits(structured, photo_edits, heading_edits=None, measure_id=None):
+    if not photo_edits or not isinstance(structured, dict):
+        return
+
+    existing_headings = {}
+    url_to_item = {}
+    for item in structured.get("staging_items", []):
+        if item.get("type") == "heading":
+            existing_headings[item.get("id")] = item
+        elif item.get("type") == "photo":
+            url = _lighting_photo_url(item.get("photo"))
+            if url:
+                url_to_item[url] = item
+
+    url_to_photo = {}
+    bucket_by_key = {b.get("key"): b for b in structured.get("buckets", [])}
+    for item in structured.get("staging_items", []):
+        if item.get("type") == "photo":
+            p = item.get("photo")
+            url = _lighting_photo_url(p)
+            if url:
+                url_to_photo[url] = p
+    for bucket in structured.get("buckets", []):
+        for p in bucket.get("photos", []):
+            url = _lighting_photo_url(p)
+            if url:
+                url_to_photo[url] = p
+
+    heading_edits = heading_edits or {}
+
+    for zone_id, ordered_tokens in photo_edits.items():
+        parts = zone_id.split("\x1f")
+
+        if measure_id is not None:
+            if parts[0].lower() == str(measure_id).lower():
+                parts = parts[1:]
+            elif parts[0].lower() not in ("staging", "bucket"):
+                continue
+        elif parts and parts[0] not in ("staging", "bucket"):
+            continue
+
+        if not parts:
+            continue
+
+        if parts[0] == "staging":
+            new_items = []
+            for token in ordered_tokens:
+                if isinstance(token, str) and token.startswith("heading:"):
+                    hid = token[8:]
+                    he = heading_edits.get(hid, {})
+                    prev = existing_headings.get(hid, {})
+                    new_items.append({
+                        "type": "heading",
+                        "id": hid,
+                        "text": he.get("text", prev.get("text", "")),
+                        "weight": he.get("weight", prev.get("weight", "medium")),
+                    })
+                elif token in url_to_item:
+                    new_items.append(url_to_item[token])
+                elif token in url_to_photo:
+                    new_items.append({"type": "photo", "photo": url_to_photo[token]})
+            structured["staging_items"] = new_items
+            continue
+
+        if parts[0] == "bucket" and len(parts) > 1:
+            bucket = bucket_by_key.get(parts[1])
+            if bucket is not None:
+                ordered_photos = [
+                    url_to_photo[u] for u in ordered_tokens
+                    if isinstance(u, str) and u in url_to_photo
+                ]
+                bucket["photos"] = ordered_photos
+
+
 def apply_photo_edits(structured, special_rooms_structured, photo_edits, sort_mode, measure_id=None, heading_edits=None):
     if not photo_edits:
         return
@@ -427,6 +506,12 @@ def apply_photo_edits(structured, special_rooms_structured, photo_edits, sort_mo
 
     if sort_mode == HEAT_PUMP_SORT_KEY:
         apply_heat_pump_photo_edits(structured, photo_edits, measure_id=measure_id)
+        return
+
+    if sort_mode == MANUAL_ARRANGE_SORT_KEY:
+        apply_manual_arrange_photo_edits(
+            structured, photo_edits, heading_edits=heading_edits, measure_id=measure_id,
+        )
         return
 
     url_to_photo = {}
@@ -513,3 +598,55 @@ def apply_photo_edits(structured, special_rooms_structured, photo_edits, sort_mo
                 new_list.append(pd)
 
         phases_dict[phase] = new_list
+
+
+def _collect_all_photos(structured, special_rooms_structured=None):
+    """Build url -> photo mapping by walking any sorted structure shape."""
+    url_to_photo = {}
+
+    def visit(node):
+        if node is None:
+            return
+        if isinstance(node, dict):
+            url = node.get("url") or _lighting_photo_url(node)
+            if url:
+                _register_photo_url(url, node, url_to_photo)
+            for v in node.values():
+                visit(v)
+        elif isinstance(node, list):
+            for item in node:
+                visit(item)
+        elif hasattr(node, "data"):
+            for u in _all_photo_urls(node):
+                _register_photo_url(u, node, url_to_photo)
+
+    visit(structured)
+    if special_rooms_structured:
+        visit(special_rooms_structured)
+    return url_to_photo
+
+
+def apply_photo_tag_edits(structured, special_rooms_structured, tag_edits):
+    """Apply session tag overrides from the HTML lightbox before PDF render."""
+    if not tag_edits or not isinstance(tag_edits, dict):
+        return
+
+    url_map = _collect_all_photos(structured, special_rooms_structured)
+    for url, tags in tag_edits.items():
+        if not tags or not isinstance(tags, list):
+            continue
+        photo = _resolve_photo_url(url, url_map)
+        if photo is None:
+            logger.warning("Tag edit: URL not in structure: %r", url)
+            continue
+        clean = [str(t).strip() for t in tags if str(t).strip()]
+        if isinstance(photo, dict):
+            photo["session_tags"] = clean
+            photo["all_tags"] = clean
+            photo["extra_tags"] = ", ".join(clean)
+        elif hasattr(photo, "tags"):
+            photo.tags = clean
+            if hasattr(photo, "data") and isinstance(photo.data, dict):
+                photo.data["session_tags"] = clean
+                photo.data["all_tags"] = clean
+                photo.data["extra_tags"] = ", ".join(clean)

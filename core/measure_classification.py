@@ -115,6 +115,11 @@ class MultiProjectConfigError(ValueError):
     pass
 
 
+class ManualArrangeConfigError(ValueError):
+    """Raised when manual arrange measure configuration is invalid."""
+    pass
+
+
 def _get_source_project_id(photo: Any) -> str:
     if isinstance(photo, dict):
         return str(photo.get("source_project_id") or "").strip()
@@ -227,6 +232,52 @@ def validate_subcontracted_measures(measures: List[MeasureConfig]) -> None:
             hash_only[h_up] = measure.id
 
 
+def validate_manual_arrange_config(
+    measures: List[MeasureConfig],
+    multi_project: bool = False,
+) -> None:
+    manual_arrange = [m for m in measures if m.type == "manual_arrange"]
+    if not manual_arrange:
+        return
+
+    if not multi_project:
+        if len(measures) > 1:
+            raise ManualArrangeConfigError(
+                "Manual Arrange cannot be combined with other measures in a single-project run."
+            )
+        return
+
+    ma_projects: Dict[str, str] = {}
+    other_projects: Dict[str, str] = {}
+
+    for measure in measures:
+        for pid in measure.applicable_projects:
+            pid = str(pid).strip()
+            if not pid:
+                continue
+            if measure.type == "manual_arrange":
+                if pid in other_projects:
+                    raise ManualArrangeConfigError(
+                        f"Project '{pid}' is assigned to Manual Arrange measure "
+                        f"'{measure.id}' and also to measure '{other_projects[pid]}'."
+                    )
+                ma_projects[pid] = measure.id
+            else:
+                if pid in ma_projects:
+                    raise ManualArrangeConfigError(
+                        f"Project '{pid}' is assigned to measure '{measure.id}' "
+                        f"and also to Manual Arrange measure '{ma_projects[pid]}'."
+                    )
+                other_projects[pid] = measure.id
+
+    for measure in manual_arrange:
+        apps = [str(p).strip() for p in measure.applicable_projects if str(p).strip()]
+        if not apps:
+            raise ManualArrangeConfigError(
+                f"Manual Arrange measure '{measure.name or measure.id}' must select at least one project."
+            )
+
+
 # ---------------- Unique classification-tag discovery ----------------
 
 def find_unique_classification_tags(
@@ -255,6 +306,7 @@ REASON_MEASURE_KEYWORD = "measure_keyword"
 REASON_UNIQUE_TAG = "unique_measure_tag"
 REASON_SUBCONTRACTED = "subcontracted_prefix"
 REASON_SOLE_PROJECT = "sole_project_owner"
+REASON_MANUAL_ARRANGE = "manual_arrange_project"
 REASON_UNKNOWN = "unknown"
 
 
@@ -297,6 +349,19 @@ def _build_sole_project_owners(measures: List[MeasureConfig]) -> Dict[str, str]:
     return {pid: next(iter(ids)) for pid, ids in owners.items() if len(ids) == 1}
 
 
+def _build_manual_arrange_by_project(measures: List[MeasureConfig]) -> Dict[str, str]:
+    """project_id -> manual_arrange measure_id."""
+    owners: Dict[str, str] = {}
+    for measure in measures:
+        if measure.type != "manual_arrange":
+            continue
+        for pid in measure.applicable_projects:
+            pid = str(pid).strip()
+            if pid:
+                owners[pid] = measure.id
+    return owners
+
+
 def classify_photos(
     photos: List[Any],
     measures: List[MeasureConfig],
@@ -306,21 +371,33 @@ def classify_photos(
     unknown: List[Any] = []
     decisions: List[ClassificationDecision] = []
 
+    # Single-project shortcut: sole manual_arrange measure gets every photo.
+    if not multi_project and len(measures) == 1 and measures[0].type == "manual_arrange":
+        for photo in photos:
+            by_measure[measures[0].id].append(photo)
+            decisions.append(ClassificationDecision(
+                _get_photo_id(photo), measures[0].id, REASON_MANUAL_ARRANGE, [],
+            ))
+        return ClassificationResult(by_measure=by_measure, unknown=unknown, decisions=decisions)
+
+    manual_arrange_by_project = _build_manual_arrange_by_project(measures)
+    tag_classifiable = [m for m in measures if m.type != "manual_arrange"]
+
     keyword_owners: Dict[str, Set[str]] = {}
-    for measure in measures:
+    for measure in tag_classifiable:
         for raw in measure.measure_keywords:
             norm = normalize_tag(raw)
             if norm:
                 keyword_owners.setdefault(norm, set()).add(measure.id)
 
-    unique_tags_by_measure = find_unique_classification_tags(measures)
+    unique_tags_by_measure = find_unique_classification_tags(tag_classifiable)
     tag_owner: Dict[str, str] = {}
     for measure_id, tags in unique_tags_by_measure.items():
         for tag in tags:
             tag_owner[tag] = measure_id
 
-    subcontracted_measures = [m for m in measures if m.type == "subcontracted"]
-    sole_project_owners = _build_sole_project_owners(measures) if multi_project else {}
+    subcontracted_measures = [m for m in tag_classifiable if m.type == "subcontracted"]
+    sole_project_owners = _build_sole_project_owners(tag_classifiable) if multi_project else {}
 
     for photo in photos:
         photo_tags = normalize_tags(_get_tags(photo))
@@ -333,14 +410,25 @@ def classify_photos(
             decisions.append(ClassificationDecision(photo_id, None, REASON_UNKNOWN, []))
             continue
 
+        # Pass 0: Manual Arrange project routing (exclusive, no tag matching)
+        if multi_project:
+            ma_owner = manual_arrange_by_project.get(_get_source_project_id(photo))
+            if ma_owner and ma_owner in eligible_ids:
+                by_measure[ma_owner].append(photo)
+                decisions.append(ClassificationDecision(photo_id, ma_owner, REASON_MANUAL_ARRANGE, []))
+                continue
+
+        # Tag-based passes only consider non-manual-arrange measures
+        eligible_tag_ids = {m.id for m in eligible if m.type != "manual_arrange"}
+
         # Pass 1: Measure Keywords
         matched_ids: Set[str] = set()
         matched_keywords: List[str] = []
         for tag in photo_tags:
             owners = keyword_owners.get(tag)
             if owners:
-                matched_ids.update(owners & eligible_ids)
-                if owners & eligible_ids:
+                matched_ids.update(owners & eligible_tag_ids)
+                if owners & eligible_tag_ids:
                     matched_keywords.append(tag)
 
         if len(matched_ids) == 1:
@@ -358,7 +446,7 @@ def classify_photos(
         matched_unique: List[str] = []
         for tag in photo_tags:
             owner = tag_owner.get(tag)
-            if owner and owner in eligible_ids:
+            if owner and owner in eligible_tag_ids:
                 matched_ids.add(owner)
                 matched_unique.append(tag)
 
@@ -375,7 +463,7 @@ def classify_photos(
         # Pass 3: Subcontracted prefix matching
         matched_sub_ids: Set[str] = set()
         matched_sub_tags: List[str] = []
-        eligible_sub = [m for m in subcontracted_measures if m.id in eligible_ids]
+        eligible_sub = [m for m in subcontracted_measures if m.id in eligible_tag_ids]
         for measure in eligible_sub:
             if (measure.key_source or "tags").lower() == "description":
                 key = normalize_tag(_get_description(photo))
@@ -401,7 +489,7 @@ def classify_photos(
         # Pass 4: Sole project owner (multi-project only)
         if multi_project:
             sole_owner = sole_project_owners.get(_get_source_project_id(photo))
-            if sole_owner and sole_owner in eligible_ids:
+            if sole_owner and sole_owner in eligible_tag_ids:
                 by_measure[sole_owner].append(photo)
                 decisions.append(ClassificationDecision(photo_id, sole_owner, REASON_SOLE_PROJECT, []))
                 continue
@@ -447,6 +535,7 @@ def run_measure_classification(
         raise DuplicateMeasureKeywordError(duplicates)
 
     validate_subcontracted_measures(measures)
+    validate_manual_arrange_config(measures, multi_project=multi_project)
 
     if multi_project:
         validate_multi_project_config(measures, complete_projects or [])

@@ -66,6 +66,10 @@ def get_tabs_css() -> str:
 # JS (re-wrapped in <script> tags on the way out, matching the
 # original LIGHTBOX_JS / DRAG_DROP_JS / PDF_PROGRESS_JS constants)
 # ─────────────────────────────────────────
+def get_photo_session_js() -> str:
+    return f"<script>\n{_read(os.path.join(_SCRIPTS_DIR, 'photo_session.js'))}</script>\n"
+
+
 def get_lightbox_js() -> str:
     return f"<script>\n{_read(os.path.join(_SCRIPTS_DIR, 'lightbox.js'))}</script>\n"
 
@@ -82,6 +86,23 @@ def get_drag_drop_js() -> str:
 
 def get_pdf_progress_js() -> str:
     return f"<script>\n{_read(os.path.join(_SCRIPTS_DIR, 'pdf_progress.js'))}</script>\n"
+
+
+def get_analytics_edits_js() -> str:
+    return f"<script>\n{_read(os.path.join(_SCRIPTS_DIR, 'analytics_edits.js'))}</script>\n"
+
+
+def get_analytics_context_js() -> str:
+    return (
+        "<script>\n"
+        "(function(){var p=new URLSearchParams(location.search);"
+        "window.AutoRecReportContext={"
+        "run_id:p.get('run_id'),"
+        "user_id:p.get('user_id'),"
+        "display_name:p.get('display_name'),"
+        "session_id:p.get('session_id')};})();\n"
+        "</script>\n"
+    )
 
 
 def get_tabs_js() -> str:

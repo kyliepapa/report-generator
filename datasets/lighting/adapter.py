@@ -17,11 +17,11 @@ from core.sort_result import SortOutput
 from datasets.lighting.sort import sort_lighting_photos
 
 
-def run(photos, installers, locations, sublocations, fixture_types,
-        phases, serial_tag, loc_numeric, subloc_numeric, loc_bigger_num):
+def run(photos, installers, location_levels, fixture_types,
+        phases, serial_tag, loc_bigger_num):
     result = sort_lighting_photos(
-        photos, installers, locations, sublocations, fixture_types,
-        phases, serial_tag, loc_numeric, subloc_numeric, loc_bigger_num,
+        photos, installers, location_levels, fixture_types,
+        phases, serial_tag, loc_bigger_num,
     )
 
     return SortOutput(

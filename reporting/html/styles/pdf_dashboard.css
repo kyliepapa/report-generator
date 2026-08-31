@@ -102,8 +102,68 @@
 .layout-btn-label { font-size: 14px; font-weight: 700; color: #1a2535; }
 .layout-btn-desc  { font-size: 11.5px; color: #8899aa; line-height: 1.4; margin-top: -4px; }
 .layout-btn.selected .layout-btn-label { color: #2e86de; }
- 
-/* Option row (checkbox) */
+.layout-btn.disabled {
+    opacity: 0.45; cursor: not-allowed; pointer-events: none;
+    border-color: #dde3ed; background: #f0f0f0;
+    box-shadow: none;
+}
+.layout-btn.disabled .layout-btn-label { color: #8899aa; }
+
+/* Segmented toggles */
+.segmented-toggle {
+    display: flex; gap: 8px; flex-wrap: wrap;
+}
+.segment-btn {
+    flex: 1; min-width: 64px; padding: 9px 12px;
+    border: 2px solid #dde3ed; border-radius: 10px;
+    background: #fafbfd; color: #636e72;
+    font-size: 13px; font-weight: 700; cursor: pointer;
+    transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.segment-btn:hover { border-color: #aac4e8; background: #f4f8ff; }
+.segment-btn.selected {
+    border-color: #2e86de; background: #f0f7ff; color: #2e86de;
+    box-shadow: 0 0 0 3px rgba(46,134,222,0.1);
+}
+.pdf-setting-hint {
+    font-size: 11.5px; color: #8899aa; line-height: 1.4; margin-top: 8px;
+}
+.pdf-measure-option-label {
+    font-size: 13px; font-weight: 600; color: #1a2535; margin-bottom: 8px;
+}
+.pdf-heading-visibility-group {
+    display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px;
+}
+.pdf-heading-visibility-row .pdf-option-row-hint { font-size: 11px; }
+.pdf-heading-rename-label { margin-top: 14px; }
+.pdf-heading-rename-group {
+    display: flex; flex-direction: column; gap: 12px; margin-bottom: 8px;
+}
+.pdf-heading-rename-section {
+    display: flex; flex-direction: column; gap: 8px;
+    padding: 10px 12px; border-radius: 10px;
+    background: #f6f8fc; border: 1px solid #e8ecf4;
+}
+.pdf-heading-rename-section-title {
+    font-size: 12px; font-weight: 700; color: #4a5d73;
+    text-transform: uppercase; letter-spacing: 0.03em;
+}
+.pdf-heading-rename-row {
+    display: flex; flex-direction: column; gap: 4px;
+}
+.pdf-heading-rename-input {
+    width: 100%; box-sizing: border-box;
+    padding: 8px 10px; border-radius: 8px;
+    border: 1px solid #d5deea; background: #fff;
+    font-size: 13px; color: #1a2535;
+}
+.pdf-heading-rename-input:focus {
+    outline: none; border-color: #2e86de;
+    box-shadow: 0 0 0 3px rgba(46,134,222,0.1);
+}
+.pdf-heading-rename-default {
+    font-size: 11px; color: #8899aa; line-height: 1.3;
+}
 .pdf-option-row {
     display: flex; align-items: center; gap: 11px; padding: 12px 16px;
     border-radius: 10px; background: #f6f8fc; border: 1px solid #e8ecf4;
@@ -189,6 +249,15 @@ body.pdf-select-mode .photo-card.pdf-hidden-selected::after {
     background: rgba(231,76,60,0.12);
     box-shadow: inset 0 0 0 2px rgba(231,76,60,0.5);
     border-radius: 8px;
+}
+body.pdf-select-mode .photo-card.photo-hide-flagged {
+    box-shadow: 0 0 0 3px #e67e22, 0 0 16px rgba(230,126,34,0.45);
+}
+body.pdf-select-mode .photo-card.photo-hide-flagged::before {
+    content: '';
+    position: absolute; inset: -3px; border-radius: 10px;
+    pointer-events: none; z-index: 1;
+    box-shadow: inset 0 0 0 2px rgba(230,126,34,0.6);
 }
  
 /* Progress */

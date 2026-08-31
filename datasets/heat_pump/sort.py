@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
+from core.tag_parser import parse_serial_tags
+
 PHASE_BEFORE = "BEFORE"
 PHASE_AFTER = "AFTER"
 
@@ -95,9 +97,10 @@ def _classify_phase(
     issues: List[Dict],
     photo: Any,
     *,
-    serial_norm: str = "",
+    serial_norms: Optional[List[str]] = None,
     auto_assign_lone_serial_to_before: bool = False,
 ) -> Optional[str]:
+    serial_norms = serial_norms or []
     has_before = PHASE_BEFORE in tags
     has_after = PHASE_AFTER in tags
     if has_before and has_after:
@@ -110,7 +113,7 @@ def _classify_phase(
         return PHASE_BEFORE
     if has_after:
         return PHASE_AFTER
-    if auto_assign_lone_serial_to_before and serial_norm and serial_norm in tags:
+    if auto_assign_lone_serial_to_before and serial_norms and any(s in tags for s in serial_norms):
         return PHASE_BEFORE
     _record_issue(
         issues, photo, "Phase", "missing_tag",
@@ -182,7 +185,7 @@ def sort_heat_pump_photos(
     issues: List[Dict[str, Any]] = []
 
     fixtures_norm = [_normalize_tag(f) for f in fixtures if str(f).strip()]
-    serial_norm = _normalize_tag(serial_tag) if serial_tag else ""
+    serial_norms = [_normalize_tag(t) for t in parse_serial_tags(serial_tag)]
 
     buckets: Dict[str, List[Any]] = {key: [] for key, _ in BUCKET_DEFS}
     untagged: List[Any] = []
@@ -194,7 +197,7 @@ def sort_heat_pump_photos(
             tags,
             issues,
             photo,
-            serial_norm=serial_norm,
+            serial_norms=serial_norms,
             auto_assign_lone_serial_to_before=auto_assign_lone_serial_to_before,
         )
         if phase is None:
@@ -215,7 +218,7 @@ def sort_heat_pump_photos(
         else:
             fixture = ""
 
-        has_serial = bool(serial_norm) and serial_norm in tags
+        has_serial = bool(serial_norms) and any(s in tags for s in serial_norms)
         key = _bucket_key(phase, has_serial)
         photo["_fixture"] = fixture
         buckets[key].append(photo)

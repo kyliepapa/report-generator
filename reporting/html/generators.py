@@ -43,13 +43,16 @@ Multi-measure tabbed report (generate_html_report):
   sorted_data["measures"] and job_manager.save_sorted_structure).
 """
 
+import json
 import re
 from datetime import datetime
 
 import core.config as config
 import core.paths as paths
+from core.photo_urls import resolve_image_urls
 from reporting.html import assets
 from reporting.html.shared_components import _make_head, _make_tail, _phase_section, _zone_id, make_photo_card_html, _photo_grid
+from reporting.pdf.heading_catalog import build_automatic_heading_catalog
 
 
 # ============================================================
@@ -263,6 +266,7 @@ def generate_html_full_hierarchy(structure, special_rooms_structure=None):
 
 SUBCONTRACTED_SHAPE = "subcontracted_sequence"
 HEAT_PUMP_SHAPE = "heat_pump_phase_serial_buckets"
+MANUAL_ARRANGE_SHAPE = "manual_arrange_sequence"
 
 
 def determine_html_method(key):
@@ -278,6 +282,8 @@ def determine_html_method(key):
         return generate_html_heat_pump
     elif key == SUBCONTRACTED_SHAPE:
         return generate_html_subcontracted
+    elif key == MANUAL_ARRANGE_SHAPE:
+        return generate_html_manual_arrange
     else:
         return generate_html_full_hierarchy
 
@@ -301,6 +307,8 @@ def determine_render_method(key):
         return _render_heat_pump
     elif key == SUBCONTRACTED_SHAPE:
         return _render_subcontracted
+    elif key == MANUAL_ARRANGE_SHAPE:
+        return _render_manual_arrange
     else:
         return _render_full_hierarchy
 
@@ -330,60 +338,71 @@ _LIGHTING_EXTRA_CSS = """
 """
 
 
+def _lighting_photo_tags(photo):
+    if hasattr(photo, "tags"):
+        return photo.tags
+    if isinstance(photo, dict):
+        return photo.get("tags") or []
+    return []
+
+
+def _lighting_photo_id(photo):
+    if hasattr(photo, "photo_id"):
+        return photo.photo_id
+    if isinstance(photo, dict):
+        return photo.get("photo_id") or photo.get("id")
+    return id(photo)
+
+
 def _lighting_photo_dict(photo):
     """
     Convert Lighting's Photo dataclass / CompanyCam payload into the
     normalized dictionary expected by make_photo_card_html().
     """
-    data = getattr(photo, "data", None)
+    # Already normalized (e.g. loaded from disk cache) — idempotent passthrough.
+    if isinstance(photo, dict) and "url" in photo and "has_image" in photo:
+        return photo
 
-    if isinstance(data, dict):
-        d = dict(data)
+    if isinstance(photo, dict):
+        d = dict(photo)
     else:
-        d = {}
+        data = getattr(photo, "data", None)
+        d = dict(data) if isinstance(data, dict) else {}
 
     # CompanyCam stores image URLs inside the "uris" list.
-    url = ""
-    uris = d.get("uris", [])
-
-    if isinstance(uris, list):
-        # Prefer the web-sized image for the report.
-        for uri_data in uris:
-            if (
-                isinstance(uri_data, dict)
-                and uri_data.get("type") == "web"
-                and uri_data.get("url")
-            ):
-                url = uri_data["url"]
-                break
-
-        # Fall back to the original image if no web image exists.
-        if not url:
-            for uri_data in uris:
-                if (
-                    isinstance(uri_data, dict)
-                    and uri_data.get("type") == "original"
-                    and uri_data.get("url")
-                ):
-                    url = uri_data["url"]
-                    break
+    display_url, original_url = resolve_image_urls(d)
+    if not display_url and isinstance(photo, dict):
+        display_url = photo.get("url")
+    if not original_url and isinstance(photo, dict):
+        original_url = photo.get("original_url")
 
     # CompanyCam stores coordinates under "coordinates".
     coordinates = d.get("coordinates") or {}
+    if not coordinates and isinstance(photo, dict):
+        coordinates = photo.get("coordinates") or {}
 
     latitude = coordinates.get("lat") if isinstance(coordinates, dict) else None
     longitude = coordinates.get("lon") if isinstance(coordinates, dict) else None
+    if latitude is None and isinstance(photo, dict):
+        latitude = photo.get("latitude")
+    if longitude is None and isinstance(photo, dict):
+        longitude = photo.get("longitude")
 
     # Preserve the existing normalized fields expected by the renderer.
-    d["url"] = url
+    d["url"] = display_url or ""
+    d["original_url"] = original_url or display_url
     d["captured_at"] = d.get(
         "captured_at",
-        int(photo.timestamp.timestamp()) if getattr(photo, "timestamp", None) else None
+        photo.get("captured_at") if isinstance(photo, dict) else None,
     )
+    if d["captured_at"] is None and not isinstance(photo, dict):
+        ts = getattr(photo, "timestamp", None)
+        if ts is not None:
+            d["captured_at"] = int(ts.timestamp())
     d["latitude"] = latitude
     d["longitude"] = longitude
-    d["all_tags"] = getattr(photo, "tags", d.get("tag_names", []))
-    d["has_image"] = bool(url)
+    d["all_tags"] = getattr(photo, "tags", d.get("tag_names", photo.get("all_tags", []) if isinstance(photo, dict) else []))
+    d["has_image"] = bool(display_url)
 
     # Tag list for the caption block, same position/style as plumbing's
     # (see elements.build_captions / build_captions_linear, which read
@@ -459,14 +478,30 @@ def _lighting_render_type_box(type_group, phases, zone_prefix):
     for fixture in other_fixtures:
         html += '<div class="bathroom-group"><div class="bathroom-header">' + fixture["name"] + '</div>'
         html += '<div class="unit-phases">'
+        rendered_ids = set()
         for i, phase in enumerate(phases):
             # Fixture photos were already ordered by phase in sort.py; we
             # only have the flat list here, so split by phase membership.
-            phase_photos = [p for p in fixture["photos"] if phase in p.tags]
+            phase_photos = [
+                p for p in fixture["photos"]
+                if phase in _lighting_photo_tags(p)
+            ]
+            for photo in phase_photos:
+                rendered_ids.add(_lighting_photo_id(photo))
             zid = _zone_id(*zone_prefix, "type", type_group["name"], "fixture", fixture["name"], phase)
             if i == 2 and not phase_photos:
                 continue
             html += _lighting_phase_section(phase_photos, phase, i, zid)
+        unphased = [
+            p for p in fixture["photos"]
+            if _lighting_photo_id(p) not in rendered_ids
+        ]
+        if unphased:
+            zid = _zone_id(
+                *zone_prefix, "type", type_group["name"],
+                "fixture", fixture["name"], "unphased",
+            )
+            html += _lighting_untagged_section(unphased, zid, label="Unphased")
         html += '</div></div>'
 
     zid = _zone_id(*zone_prefix, "type", type_group["name"], "untagged")
@@ -588,35 +623,54 @@ def generate_special_rooms_html(special_rooms_structure, zone_prefix=""):
 # SUBCONTRACTED (flat numbered sequence + injectable headings)
 # ============================================================
 
+def _extract_lat_lon(*sources):
+    """Read lat/lon from coordinates or top-level fields on photo dict(s)."""
+    latitude = longitude = None
+    for src in sources:
+        if not isinstance(src, dict):
+            continue
+        coords = src.get("coordinates") or {}
+        if isinstance(coords, dict):
+            if latitude is None and coords.get("lat") is not None:
+                latitude = coords.get("lat")
+            if longitude is None and coords.get("lon") is not None:
+                longitude = coords.get("lon")
+        if latitude is None and src.get("latitude") is not None:
+            latitude = src.get("latitude")
+        if longitude is None and src.get("longitude") is not None:
+            longitude = src.get("longitude")
+    return latitude, longitude
+
+
 def _subcontract_photo_dict(photo):
     """Normalize a raw photo dict for subcontracted report cards."""
-    if isinstance(photo, dict) and photo.get("url"):
-        uris = photo.get("uris", [])
-        url = photo["url"]
-    else:
-        raw = photo if isinstance(photo, dict) else getattr(photo, "data", {}) or {}
-        uris = raw.get("uris", [])
-        url = ""
-        for u in uris:
-            if isinstance(u, dict) and u.get("type") == "web" and u.get("url"):
-                url = u["url"]
-                break
-        if not url:
-            for u in uris:
-                if isinstance(u, dict) and u.get("type") == "original" and u.get("url"):
-                    url = u["url"]
-                    break
-        photo = raw
+    # Already normalized (e.g. loaded from disk cache) — idempotent passthrough.
+    if isinstance(photo, dict) and "url" in photo and "has_image" in photo:
+        return photo
 
-    coords = photo.get("coordinates") or {}
-    raw_tags = photo.get("tag_names", photo.get("tags", []))
+    raw = photo if isinstance(photo, dict) else getattr(photo, "data", {}) or {}
+    if not isinstance(raw, dict):
+        raw = {}
+
+    display_url, original_url = resolve_image_urls(raw)
+    if not display_url and isinstance(photo, dict):
+        display_url = photo.get("url")
+    if not original_url:
+        original_url = photo.get("original_url") if isinstance(photo, dict) else None
+    original_url = original_url or display_url
+
+    latitude, longitude = _extract_lat_lon(
+        raw, photo if isinstance(photo, dict) else None,
+    )
+    raw_tags = raw.get("tag_names", raw.get("tags", photo.get("tag_names", photo.get("tags", [])) if isinstance(photo, dict) else []))
     normalized = [_normalize_lighting_tag(t) for t in (raw_tags or [])]
     return {
-        "url": url or "https://via.placeholder.com/200x180/cccccc/666666?text=No+Image",
-        "captured_at": photo.get("captured_at"),
-        "latitude": coords.get("lat"),
-        "longitude": coords.get("lon"),
-        "has_image": bool(url),
+        "url": display_url or "https://via.placeholder.com/200x180/cccccc/666666?text=No+Image",
+        "original_url": original_url,
+        "captured_at": raw.get("captured_at", photo.get("captured_at") if isinstance(photo, dict) else None),
+        "latitude": latitude,
+        "longitude": longitude,
+        "has_image": bool(display_url),
         "all_tags": raw_tags,
         "extra_tags": ", ".join(t for t in normalized if t),
     }
@@ -673,6 +727,78 @@ def generate_html_subcontracted(structure, special_rooms_structure=None):
             {assets.get_pdf_button_html()}
         </div>
         {_render_subcontracted(structure, special_rooms_structure)}
+    </div>{_make_tail()}"""
+    with open(paths.OUTPUT_FILE, "w", encoding="utf-8") as f:
+        f.write(html)
+
+
+# ============================================================
+# MANUAL ARRANGE (staging grid + optional pre-sort buckets)
+# ============================================================
+
+def _manual_arrange_bucket_section(bucket, zone_prefix):
+    """One pre-sort bucket: heading + photo grid."""
+    label = bucket.get("label", "")
+    key = bucket.get("key", "")
+    photos = bucket.get("photos", [])
+    zid = _zone_id(zone_prefix, "bucket", key)
+    cards = ''.join(make_photo_card_html(_subcontract_photo_dict(p)) for p in photos)
+    html = '<div class="phase-section manual-arrange-bucket">'
+    html += f'<div class="phase-header"><h3 class="phase-title"><span class="phase-badge before">{label}</span></h3>'
+    html += f'<span class="phase-count">{len(photos)} photos</span></div>'
+    if photos:
+        html += f'<div class="photo-grid" data-zone="{zid}">{cards}</div>'
+    else:
+        html += f'<div class="photo-grid" data-zone="{zid}"></div><div class="no-photos">No photos</div>'
+    html += '</div>'
+    return html
+
+
+def _render_manual_arrange(structure, special_rooms_structure=None, zone_prefix=""):
+    staging_items = structure.get("staging_items", []) if isinstance(structure, dict) else []
+    buckets = structure.get("buckets", []) if isinstance(structure, dict) else []
+    bucket_count = sum(len(b.get("photos", [])) for b in buckets)
+    staging_count = sum(1 for it in staging_items if it.get("type") == "photo")
+    photo_count = staging_count + bucket_count
+
+    html = f"""<div class="summary">
+        <div class="summary-item"><span class="number">{photo_count}</span><div class="label">Photos</div></div>
+    </div>
+    <div class="content">"""
+
+    zid = _zone_id(zone_prefix, "staging")
+    html += f'<div class="subcontract-grid photo-grid" data-zone="{zid}">'
+
+    photo_idx = 0
+    for item in staging_items:
+        if item.get("type") == "heading":
+            html += _subcontract_heading_html(item)
+        elif item.get("type") == "photo":
+            photo_idx += 1
+            pd = _subcontract_photo_dict(item.get("photo"))
+            html += make_photo_card_html(pd, idx=photo_idx)
+
+    html += '</div>'
+
+    for bucket in buckets:
+        html += _manual_arrange_bucket_section(bucket, zone_prefix)
+
+    html += '</div>'
+    return html
+
+
+def generate_html_manual_arrange(structure, special_rooms_structure=None):
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    title = config.PROJECT_NAME or config.PROJECT_ID
+
+    html = _make_head(title)
+    html += f"""<div class="container">
+        <div class="report-header">
+            <h1>{title}</h1>
+            <div class="meta">Generated {now}</div>
+            {assets.get_pdf_button_html()}
+        </div>
+        {_render_manual_arrange(structure, special_rooms_structure)}
     </div>{_make_tail()}"""
     with open(paths.OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write(html)
@@ -757,24 +883,18 @@ def _unknown_photo_dict(photo):
     expects. No sorting/sectioning is attempted, per spec: this is a
     flat, single-bucket tab, same treatment as an Untagged zone.
     """
-    uris = photo.get("uris", [])
-    url = ""
-    for u in uris:
-        if isinstance(u, dict) and u.get("type") == "web" and u.get("url"):
-            url = u["url"]
-            break
-    if not url:
-        for u in uris:
-            if isinstance(u, dict) and u.get("type") == "original" and u.get("url"):
-                url = u["url"]
-                break
-    coords = photo.get("coordinates") or {}
+    if isinstance(photo, dict) and "url" in photo and "has_image" in photo:
+        return photo
+
+    display_url, original_url = resolve_image_urls(photo)
+    latitude, longitude = _extract_lat_lon(photo)
     return {
-        "url": url or "https://via.placeholder.com/200x180/cccccc/666666?text=No+Image",
+        "url": display_url or "https://via.placeholder.com/200x180/cccccc/666666?text=No+Image",
+        "original_url": original_url,
         "captured_at": photo.get("captured_at"),
-        "latitude": coords.get("lat"),
-        "longitude": coords.get("lon"),
-        "has_image": bool(url),
+        "latitude": latitude,
+        "longitude": longitude,
+        "has_image": bool(display_url),
         "all_tags": photo.get("tag_names", []),
     }
 
@@ -811,6 +931,46 @@ def _render_unknown_measure(photos, photos_by_project=None):
     html += f'<div class="unit-phases" style="padding:20px;">{_photo_grid(normalized, zid)}</div></div>'
     html += '</div>'
     return html
+
+
+def build_measure_heading_schema(measures):
+    """Return { measure_id: [{ key, label }, ...] } for PDF heading toggles."""
+    schema = {}
+    for m in measures:
+        shape = m.get("shape", "")
+        headings = []
+        if shape == "location_sublocation_type_fixture_phase":
+            level_count = m.get("location_level_count") or 1
+            for i in range(1, level_count + 1):
+                headings.append({"key": f"location_level_{i}", "label": f"Location Level {i}"})
+            headings.append({"key": "fixture_type", "label": "Fixture Type"})
+        elif shape == "full":
+            headings = [
+                {"key": "building", "label": "Building"},
+                {"key": "unit", "label": "Unit"},
+                {"key": "bathroom", "label": "Bathroom"},
+            ]
+        elif shape == "bldg_unit_phase":
+            headings = [
+                {"key": "building", "label": "Building"},
+                {"key": "unit", "label": "Unit"},
+            ]
+        elif shape == "unit_bath_phase":
+            headings = [
+                {"key": "unit", "label": "Unit"},
+                {"key": "bathroom", "label": "Bathroom"},
+            ]
+        elif shape == "unit_phase":
+            headings = [{"key": "unit", "label": "Unit"}]
+        elif shape == HEAT_PUMP_SHAPE:
+            headings = [{"key": "bucket", "label": "Serial Bucket"}]
+        elif shape == SUBCONTRACTED_SHAPE:
+            headings = [{"key": "section", "label": "Section Headings"}]
+        elif shape == MANUAL_ARRANGE_SHAPE:
+            headings = [{"key": "section", "label": "Section Headings"}]
+        if headings:
+            schema[m["id"]] = headings
+    return schema
 
 
 def generate_html_report(measures, unknown_photos=None, unknown_photos_by_project=None, title=None):
@@ -851,7 +1011,7 @@ def generate_html_report(measures, unknown_photos=None, unknown_photos_by_projec
             inner = render_fn(m["structure"], m.get("special"), phases=m.get("phases"), zone_prefix=m["id"])
         else:
             inner = render_fn(m["structure"], m.get("special"), zone_prefix=m["id"])
-        tabs.append({"id": m["id"], "label": m.get("name") or m["type"], "inner": inner})
+        tabs.append({"id": m["id"], "label": m.get("name") or m["type"], "shape": m["shape"], "inner": inner})
 
     if unknown_photos_by_project:
         tabs.append({
@@ -872,12 +1032,20 @@ def generate_html_report(measures, unknown_photos=None, unknown_photos_by_projec
         return
 
     nav = "".join(
-        f'<button class="tab-btn{" active" if i == 0 else ""}" data-tab="{t["id"]}">{t["label"]}</button>'
+        f'<button class="tab-btn{" active" if i == 0 else ""}" data-tab="{t["id"]}" data-sort-mode="{t.get("shape", "")}">{t["label"]}</button>'
         for i, t in enumerate(tabs)
     )
     panes = "".join(
-        f'<div class="tab-pane{" active" if i == 0 else ""}" id="tab-{t["id"]}">{t["inner"]}</div>'
+        f'<div class="tab-pane{" active" if i == 0 else ""}" id="tab-{t["id"]}"'
+        f' data-sort-mode="{t.get("shape", "")}">{t["inner"]}</div>'
         for i, t in enumerate(tabs)
+    )
+
+    heading_schema = build_measure_heading_schema(measures)
+    heading_catalog = build_automatic_heading_catalog(measures)
+    heading_script = (
+        f'<script>window._measureHeadingSchema = {json.dumps(heading_schema)};</script>'
+        f'<script>window._automaticHeadingCatalog = {json.dumps(heading_catalog)};</script>'
     )
 
     html = _make_head(title, extra_css=assets.get_tabs_css())
@@ -889,7 +1057,7 @@ def generate_html_report(measures, unknown_photos=None, unknown_photos_by_projec
         </div>
         <div class="tab-nav">{nav}</div>
         {panes}
-    </div>{assets.get_tabs_js()}{_make_tail()}"""
+    </div>{assets.get_tabs_js()}{heading_script}{_make_tail()}"""
 
     with open(paths.OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write(html)

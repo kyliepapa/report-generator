@@ -133,6 +133,15 @@ def parse_bldg_unit(tags_clean):
     return bldg, unit
 
 
+def parse_serial_tags(serial_tag) -> list:
+    """Parse serial_tag from a comma-separated string or list."""
+    if isinstance(serial_tag, list):
+        return [str(x).strip() for x in serial_tag if str(x).strip()]
+    if isinstance(serial_tag, str):
+        return [x.strip() for x in serial_tag.split(",") if x.strip()]
+    return []
+
+
 def is_unassigned_photo(bath_idx, phase_idx):
     """
     Unchanged. Name kept as "bath_idx" for the parameter since it's

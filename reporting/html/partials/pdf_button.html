@@ -44,14 +44,37 @@
             </div>
           </div>
         </div>
+
+        <!-- 1b. Metadata position (grid only) -->
+        <div id="metadataPositionRow" class="pdf-setting-group">
+          <div class="pdf-section-label">Metadata Position</div>
+          <div class="segmented-toggle" id="metadataPositionToggle">
+            <button type="button" class="segment-btn" data-value="left" onclick="selectMetadataPosition('left')">Left</button>
+            <button type="button" class="segment-btn selected" data-value="outside" onclick="selectMetadataPosition('outside')">Outside</button>
+            <button type="button" class="segment-btn" data-value="inside" onclick="selectMetadataPosition('inside')">Inside</button>
+            <button type="button" class="segment-btn" data-value="right" onclick="selectMetadataPosition('right')">Right</button>
+          </div>
+          <div class="pdf-setting-hint">Where photo captions appear relative to each image in grid layout.</div>
+        </div>
+
+        <!-- 1c. Photos per page (linear only) -->
+        <div id="linearPhotosRow" class="pdf-setting-group" style="display:none;">
+          <div class="pdf-section-label">Photos Per Page</div>
+          <div class="segmented-toggle" id="linearPhotosToggle">
+            <button type="button" class="segment-btn" data-value="2" onclick="selectLinearPhotosPerPage(2)">2</button>
+            <button type="button" class="segment-btn" data-value="3" onclick="selectLinearPhotosPerPage(3)">3</button>
+            <button type="button" class="segment-btn selected" data-value="4" onclick="selectLinearPhotosPerPage(4)">4</button>
+          </div>
+          <div class="pdf-setting-hint">How many photos to group on each page in linear layout.</div>
+        </div>
  
-        <!-- 2. Hide empty fields (grid only) -->
+        <!-- 2. Hide empty fields (both layout modes) -->
         <div id="hideEmptyRow" class="pdf-setting-group">
           <label class="pdf-option-row" for="hideEmptyCheck">
             <input type="checkbox" id="hideEmptyCheck">
             <div class="pdf-option-row-text">
               <span class="pdf-option-row-title">Hide Empty Fields</span>
-              <span class="pdf-option-row-hint">Skips sections with no photos. Lone After photos shift left; gaps may be filled by untagged photos.</span>
+              <span class="pdf-option-row-hint">Hides sections with no photos. In grid mode, some photos may shift left.</span>
             </div>
           </label>
         </div>

@@ -12,17 +12,27 @@ from reportlab.lib import colors
 from reportlab.lib.units import inch
 
 from reporting.pdf.elements import (
-    build_photo_col, build_linear_row, style_no_photo,
+    build_photo_col, build_linear_row, build_grid2_cell, style_no_photo,
+    resolve_caption_side,
     DIVIDER_COLOR, IMG_W, IMG_H, BEFORE_COLOR, AFTER_COLOR, UNTAGGED_COLOR,
+    GRID2_CELL_W, GRID2_ROWS_PER_GROUP,
 )
+
+
+def _linear_rows_per_group(pdf_options):
+    return int((pdf_options or {}).get("linear_photos_per_page") or 4)
 
 
 # ============================
 # COMPARISON ROW — grid mode
 # ============================
 def build_comparison_row(before_photo, after_photo, pdf_options=None):
-    left  = build_photo_col(before_photo, BEFORE_COLOR, "BEFORE", "left", pdf_options)
-    right = build_photo_col(after_photo,  AFTER_COLOR,  "AFTER",  "right", pdf_options)
+    pdf_options = pdf_options or {}
+    meta_pos = pdf_options.get("metadata_position", "outside")
+    left_side  = resolve_caption_side(meta_pos, 0)
+    right_side = resolve_caption_side(meta_pos, 1)
+    left  = build_photo_col(before_photo, BEFORE_COLOR, "BEFORE", left_side, pdf_options)
+    right = build_photo_col(after_photo,  AFTER_COLOR,  "AFTER",  right_side, pdf_options)
     tbl = Table([[left, right]], colWidths=[IMG_W, IMG_W])
     tbl.setStyle(TableStyle([
         ("VALIGN",       (0,0),(-1,-1), "TOP"),
@@ -45,10 +55,13 @@ def build_single_row(photo, side="left", phase_label=None, pdf_options=None):
 
     # phase_label – if supplied, overrides the default badge text so that an
     #             AFTER photo shifted into the left column still reads "AFTER".
+    pdf_options = pdf_options or {}
     default_label = "BEFORE" if side == "left" else "AFTER"
     label = phase_label if phase_label else default_label
     color = BEFORE_COLOR if label == "BEFORE" else AFTER_COLOR
-    col   = build_photo_col(photo, color, label, side, pdf_options)
+    col_index = 0 if side == "left" else 1
+    cap_side = resolve_caption_side(pdf_options.get("metadata_position", "outside"), col_index)
+    col   = build_photo_col(photo, color, label, cap_side, pdf_options)
     blank = [Spacer(1, IMG_H)]
     data  = [col, blank] if side == "left" else [blank, col]
     tbl   = Table([data], colWidths=[IMG_W, IMG_W])
@@ -67,8 +80,12 @@ def build_single_row(photo, side="left", phase_label=None, pdf_options=None):
 # No section divider — photos are told apart by their "ID" phase badge only.
 # ============================
 def build_untagged_pair(photo_left, photo_right=None, pdf_options=None):
-    left  = build_photo_col(photo_left,  UNTAGGED_COLOR, "ID", "left", pdf_options)
-    right = build_photo_col(photo_right, UNTAGGED_COLOR, "ID", "right", pdf_options) \
+    pdf_options = pdf_options or {}
+    meta_pos = pdf_options.get("metadata_position", "outside")
+    left_side  = resolve_caption_side(meta_pos, 0)
+    right_side = resolve_caption_side(meta_pos, 1)
+    left  = build_photo_col(photo_left,  UNTAGGED_COLOR, "ID", left_side, pdf_options)
+    right = build_photo_col(photo_right, UNTAGGED_COLOR, "ID", right_side, pdf_options) \
             if photo_right else [Spacer(1, 0.1*inch)]
     tbl = Table([[left, right]], colWidths=[IMG_W, IMG_W])
     tbl.setStyle(TableStyle([
@@ -137,9 +154,10 @@ def build_id_section_linear(id_photos, header_elements=None, pdf_options=None):
     header_elements = list(header_elements or [])
 
     rows = [build_linear_row(p, pdf_options) for p in id_photos]
+    per_group = _linear_rows_per_group(pdf_options)
 
-    for gi, start in enumerate(range(0, len(rows), LINEAR_ROWS_PER_GROUP)):
-        group  = rows[start : start + LINEAR_ROWS_PER_GROUP]
+    for gi, start in enumerate(range(0, len(rows), per_group)):
+        group  = rows[start : start + per_group]
         spaced = []
         for row in group:
             spaced.append(row)
@@ -259,25 +277,8 @@ def build_photo_section_linear(phases_dict, header_elements, pdf_options=None):
                 all_photos.append(p)
 
     if not all_photos:
-        # ────────────────────────────────────────────────────────────────
-        # TODO / FLAG FOR REVIEW — relocated EXACTLY as found, not fixed:
-        # The original code here had the comment
-        #   "Just me rigging the system real quick, don't mind me:"
-        # followed by an unconditional `hide_empty = True`. That makes the
-        # "No photos in this section" placeholder block below completely
-        # unreachable -- it always returns early regardless of what the
-        # user's hide_empty_fields toggle is actually set to. This may have
-        # been an intentional permanent decision (never show the
-        # placeholder in linear mode) or a leftover debugging hack that
-        # was never cleaned up. Preserved as-is because it changes
-        # user-visible PDF output either way -- needs a decision, not a
-        # silent fix.
-        # ────────────────────────────────────────────────────────────────
-        hide_empty = True
         if hide_empty:
             return elements
-        # hide_empty is off: render the "No photos" placeholder so the
-        # section heading still appears and the user knows the slot exists.
         block = list(header_elements) + [
             Paragraph("No photos in this section.", style_no_photo),
             Spacer(1, 6),
@@ -286,8 +287,9 @@ def build_photo_section_linear(phases_dict, header_elements, pdf_options=None):
         return elements
 
     rows = [build_linear_row(p, pdf_options) for p in all_photos]
-    for gi, start in enumerate(range(0, len(rows), LINEAR_ROWS_PER_GROUP)):
-        group  = rows[start : start + LINEAR_ROWS_PER_GROUP]
+    per_group = _linear_rows_per_group(pdf_options)
+    for gi, start in enumerate(range(0, len(rows), per_group)):
+        group  = rows[start : start + per_group]
         spaced = []
         for row in group:
             spaced.append(row)
@@ -331,8 +333,9 @@ def build_flat_linear_section(photos, header_elements, pdf_options=None):
 
     elements = []
     rows = [build_linear_row(p, pdf_options) for p in visible]
-    for gi, start in enumerate(range(0, len(rows), LINEAR_ROWS_PER_GROUP)):
-        group  = rows[start : start + LINEAR_ROWS_PER_GROUP]
+    per_group = _linear_rows_per_group(pdf_options)
+    for gi, start in enumerate(range(0, len(rows), per_group)):
+        group  = rows[start : start + per_group]
         spaced = []
         for row in group:
             spaced.append(row)
@@ -340,4 +343,112 @@ def build_flat_linear_section(photos, header_elements, pdf_options=None):
                                     color=colors.HexColor("#eeeeee"), spaceAfter=2))
         block = (header_elements + spaced) if gi == 0 else spaced
         elements.append(KeepTogether(block))
+    return elements
+
+
+# ============================
+# SUBCONTRACTED 2×2 GRID SECTION
+# ============================
+def _grid2_table_style():
+    return TableStyle([
+        ("VALIGN",       (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING",  (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING",   (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("BOX",          (0, 0), (-1, -1), 0.75, DIVIDER_COLOR),
+        ("LINEAFTER",    (0, 0), (0, -1), 0.75, DIVIDER_COLOR),
+    ])
+
+
+def _build_grid2_row(photo_left, photo_right, pdf_options):
+    left_cell  = build_grid2_cell(photo_left, 0, pdf_options) if photo_left else Spacer(1, 0.1 * inch)
+    right_cell = build_grid2_cell(photo_right, 1, pdf_options) if photo_right else Spacer(1, 0.1 * inch)
+    tbl = Table([[left_cell, right_cell]], colWidths=[GRID2_CELL_W, GRID2_CELL_W])
+    tbl.setStyle(_grid2_table_style())
+    return tbl
+
+
+def build_subcontracted_grid_section(photos, header_elements=None, pdf_options=None):
+    """
+    Render subcontracted photos in a 2×2 grid (left-to-right, top-to-bottom).
+    Groups of up to 4 photos are kept together; incomplete rows are not padded.
+    """
+    pdf_options = pdf_options or {}
+    header_elements = list(header_elements or [])
+    if not photos:
+        return []
+
+    grid_rows = []
+    for i in range(0, len(photos), 2):
+        grid_rows.append(_build_grid2_row(
+            photos[i],
+            photos[i + 1] if i + 1 < len(photos) else None,
+            pdf_options,
+        ))
+
+    elements = []
+    for gi, start in enumerate(range(0, len(grid_rows), GRID2_ROWS_PER_GROUP)):
+        group = grid_rows[start : start + GRID2_ROWS_PER_GROUP]
+        spaced = []
+        for row in group:
+            spaced.append(row)
+            spaced.append(Spacer(1, 4))
+        block = (header_elements + spaced) if gi == 0 else spaced
+        elements.append(KeepTogether(block))
+
+    return elements
+
+
+# ============================
+# SUBCONTRACTED 2×2 GRID SECTION
+# ============================
+def _grid2_table_style():
+    return TableStyle([
+        ("VALIGN",       (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING",  (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING",   (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("BOX",          (0, 0), (-1, -1), 0.75, DIVIDER_COLOR),
+        ("LINEAFTER",    (0, 0), (0, -1), 0.75, DIVIDER_COLOR),
+    ])
+
+
+def _build_grid2_row(photo_left, photo_right, pdf_options):
+    left_cell  = build_grid2_cell(photo_left, 0, pdf_options) if photo_left else Spacer(1, 0.1 * inch)
+    right_cell = build_grid2_cell(photo_right, 1, pdf_options) if photo_right else Spacer(1, 0.1 * inch)
+    tbl = Table([[left_cell, right_cell]], colWidths=[GRID2_CELL_W, GRID2_CELL_W])
+    tbl.setStyle(_grid2_table_style())
+    return tbl
+
+
+def build_subcontracted_grid_section(photos, header_elements=None, pdf_options=None):
+    """
+    Render subcontracted photos in a 2×2 grid (left-to-right, top-to-bottom).
+    Groups of up to 4 photos are kept together; incomplete rows are not padded.
+    """
+    pdf_options = pdf_options or {}
+    header_elements = list(header_elements or [])
+    if not photos:
+        return []
+
+    grid_rows = []
+    for i in range(0, len(photos), 2):
+        grid_rows.append(_build_grid2_row(
+            photos[i],
+            photos[i + 1] if i + 1 < len(photos) else None,
+            pdf_options,
+        ))
+
+    elements = []
+    for gi, start in enumerate(range(0, len(grid_rows), GRID2_ROWS_PER_GROUP)):
+        group = grid_rows[start : start + GRID2_ROWS_PER_GROUP]
+        spaced = []
+        for row in group:
+            spaced.append(row)
+            spaced.append(Spacer(1, 4))
+        block = (header_elements + spaced) if gi == 0 else spaced
+        elements.append(KeepTogether(block))
+
     return elements

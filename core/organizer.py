@@ -22,6 +22,7 @@ on its own.
 from collections import defaultdict
 
 import core.config as config
+from core.photo_urls import resolve_image_urls
 from core.sort_engine import get_sort_key
 from core.tag_parser import get_special_room_match
 
@@ -133,19 +134,6 @@ def organize_photos(photos, unit_bath_map=None):
     def normalize_bldg(bldg):
         return bldg if bldg != "00" else "NO_BLDG"
 
-    def get_best_image_url(photo):
-        uris = photo.get("uris", [])
-        for u in uris:
-            if u.get("type") == "web":
-                return u.get("url")
-        for u in uris:
-            if u.get("type") == "original":
-                return u.get("url")
-        for u in uris:
-            if u.get("url"):
-                return u.get("url")
-        return None
-
     for p in photos:
         tags_clean = [t.strip().upper() for t in p.get("tag_names", [])]
 
@@ -154,11 +142,12 @@ def organize_photos(photos, unit_bath_map=None):
             if room_name:
                 phase_idx = next((i for i, n in enumerate(phase_order) if n in tags_clean), -1)
                 phase_key = phase_order[phase_idx] if 0 <= phase_idx < len(phase_order) else "UNTAGGED"
-                photo_url = get_best_image_url(p)
+                photo_url, original_url = resolve_image_urls(p)
                 coordinates = p.get("coordinates", {})
                 all_tags = p.get("tag_names", [])
                 photo_data = {
                     "url": photo_url or "https://via.placeholder.com/200x180/cccccc/666666?text=No+Image",
+                    "original_url": original_url,
                     "captured_at": p.get("captured_at"),
                     "latitude": coordinates.get("lat"),
                     "longitude": coordinates.get("lon"),
@@ -197,12 +186,13 @@ def organize_photos(photos, unit_bath_map=None):
             unit_key = normalize_unit(unit)
             phase_key = get_phase_label(phase_idx)
 
-        photo_url = get_best_image_url(p)
+        photo_url, original_url = resolve_image_urls(p)
         coordinates = p.get("coordinates", {})
         all_tags = p.get("tag_names", [])
 
         photo_data = {
             "url": photo_url or "https://via.placeholder.com/200x180/cccccc/666666?text=No+Image",
+            "original_url": original_url,
             "captured_at": p.get("captured_at"),
             "latitude": coordinates.get("lat"),
             "longitude": coordinates.get("lon"),

@@ -19,6 +19,7 @@ import os
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATIC_DIR = os.path.join(PROJECT_ROOT, "static")
 REPORTS_DIR = os.path.join(STATIC_DIR, "reports")
+CACHE_DIR = os.path.join(REPORTS_DIR, ".cache")
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 OUTPUT_FILE = os.path.join(STATIC_DIR, "report.html")
 
@@ -29,9 +30,16 @@ CHANGELOG_FILE  = os.path.join(DATA_DIR, "changelog.txt")
 REPNREQ_FILE    = os.path.join(DATA_DIR, "repnreq.txt")
 USAGE_LOGS_FILE = os.path.join(DATA_DIR, "usage_logs.txt")
 
+ANALYTICS_DIR = os.path.join(DATA_DIR, "analytics")
+ANALYTICS_RUNS_DIR = os.path.join(ANALYTICS_DIR, "runs")
+ANALYTICS_RUNS_LOG = os.path.join(ANALYTICS_DIR, "runs.jsonl")
+ANALYTICS_USERS_FILE = os.path.join(ANALYTICS_DIR, "users.json")
+
 os.makedirs(STATIC_DIR, exist_ok=True)
 os.makedirs(REPORTS_DIR, exist_ok=True)
+os.makedirs(CACHE_DIR, exist_ok=True)
 os.makedirs(DATA_DIR, exist_ok=True)
+os.makedirs(ANALYTICS_RUNS_DIR, exist_ok=True)
 
 
 # ─────────────────────────────────────────

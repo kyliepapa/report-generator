@@ -101,8 +101,20 @@ def build_cover_page(context, pdf_options, is_linear, base_dir, elements):
                        ("total_bathrooms", "Installations"),
                        ("total_photos",    "Total Photos")]:
         ctx_val = context.get(key)
-        if ctx_val:
-            _render(key, f"{label}: {ctx_val}", style_meta)
+        if not ctx_val:
+            continue
+        entry = field_map.get(key)
+        if entry is not None and not entry.get("visible", True):
+            continue
+        if entry is not None:
+            raw = entry.get("value", "").strip()
+            if raw:
+                text = f"{label}: {raw}" if raw.isdigit() else raw
+            else:
+                text = f"{label}: {ctx_val}"
+        else:
+            text = f"{label}: {ctx_val}"
+        elements.append(Paragraph(text, style_meta))
 
     # ── Layout badge ──────────────────────────────────────────────────────────
     layout_default = "Linear Layout" if is_linear else "Grid Layout"

@@ -70,6 +70,7 @@
         .phase-count { margin-left: auto; font-size: 0.85em; color: var(--muted); }
         .photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
         .photo-card {
+            position: relative;
             background: white; border-radius: 8px; overflow: hidden;
             box-shadow: 0 2px 8px rgba(0,0,0,0.08); transition: transform 0.18s, box-shadow 0.18s;
         }
@@ -79,6 +80,26 @@
             outline-offset: 2px;
         }
         .photo-card img { width: 100%; height: 170px; object-fit: cover; display: block; }
+        .photo-img-wrap {
+            width: 100%; height: 170px; overflow: hidden;
+            display: flex; align-items: center; justify-content: center;
+            background: #e8ecf4;
+        }
+        .photo-img-wrap img {
+            width: 100%; height: 170px; object-fit: cover;
+            transition: transform 0.2s ease;
+        }
+        .photo-card.photo-hide-flagged {
+            box-shadow: 0 0 0 2px #e67e22, 0 4px 12px rgba(230,126,34,0.25);
+        }
+        .photo-hide-flag-badge {
+            position: absolute; top: 0; right: 0; z-index: 5;
+            background: linear-gradient(135deg, #e67e22, #d35400);
+            color: white; font-size: 9px; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.4px;
+            padding: 4px 8px; border-radius: 0 8px 0 8px;
+            pointer-events: none; line-height: 1.2;
+        }
         .photo-metadata { padding: 9px 10px; font-size: 0.8em; color: var(--muted); }
         .timestamp { font-weight: 600; color: var(--text); margin-bottom: 4px; }
         .geotag-link { color: var(--accent); text-decoration: none; }

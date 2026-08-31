@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
 
+from core.tag_parser import parse_serial_tags
+
 
 # ============================================================
 # DATA TYPES
@@ -67,6 +69,41 @@ class SortResult:
 # ============================================================
 
 UNTAGGED = "Untagged"
+
+
+def _normalize_tag(value: Any) -> str:
+    return str(value).strip().upper()
+
+
+def _normalize_tag_list(values: list[str]) -> list[str]:
+    return [_normalize_tag(v) for v in values if str(v).strip()]
+
+
+def _normalize_photos(photos: list[Photo]) -> list[Photo]:
+    return [
+        Photo(
+            photo_id=photo.photo_id,
+            tags=_normalize_tag_list(photo.tags),
+            timestamp=photo.timestamp,
+            data=photo.data,
+        )
+        for photo in photos
+    ]
+
+
+def _normalize_location_levels(location_levels: list[dict]) -> list[dict]:
+    return [
+        {
+            "tags": _normalize_tag_list(level.get("tags") or []),
+            "numeric": bool(level.get("numeric")),
+        }
+        for level in location_levels
+    ]
+
+
+def _normalize_serial_tag(serial_tag: str) -> str:
+    tags = [_normalize_tag(t) for t in parse_serial_tags(serial_tag)]
+    return ",".join(tags)
 
 
 def is_numeric_tag(tag: str) -> bool:
@@ -173,261 +210,314 @@ def classify_explicit_tag(
 
 
 # ============================================================
-# LOCATION CLASSIFICATION
+# LOCATION LEVEL CLASSIFICATION (1–5 levels)
 # ============================================================
 
-def determine_location(
+def _level_label(level_index: int) -> str:
+    return f"Location Level {level_index + 1}"
+
+
+def map_numeric_tags_to_levels(
     photo: Photo,
-    locations: list[str],
-    loc_numeric: bool,
-    subloc_numeric: bool,
+    location_levels: list[dict],
     loc_bigger_num: bool,
     issues: list[Issue],
-) -> tuple[Optional[str], Optional[str]]:
+) -> Optional[dict[int, str]]:
     """
-    Determine Location for a photo.
-
-    Returns:
-        (location, numeric_sublocation_candidate)
-
-    Explicit Location tags always take precedence over numeric
-    tags.
-
-    If both Location and Sublocation are numeric, two numeric
-    tags may be interpreted according to loc_bigger_num.
-
-    The second returned value is a candidate Sublocation value
-    that can later be used during Sublocation processing.
+    Assign numeric tags to numeric location levels for one photo.
+    Returns None when too many numeric tags are present.
     """
+    numeric_indices = [
+        i for i, level in enumerate(location_levels) if level.get("numeric")
+    ]
+    if not numeric_indices:
+        return {}
 
-    # --------------------------------------------------------
-    # Explicit Location
-    # --------------------------------------------------------
+    tags = list(dict.fromkeys(matching_numeric_tags(photo)))
+    needed = len(numeric_indices)
 
-    explicit_location, ambiguous = classify_explicit_tag(
-        photo,
-        locations,
-    )
-
-    if ambiguous:
+    if len(tags) > needed:
         record_issue(
             issues,
             photo,
             "Location",
             "ambiguous_tag",
-            "Photo contains multiple competing Location tags.",
+            f"Photo contains {len(tags)} numeric tags but only "
+            f"{needed} numeric location level(s) are configured.",
+            context={"numeric_tags": tags},
         )
-        return None, None
+        return None
 
-    if explicit_location is not None:
-        return explicit_location, None
+    if len(tags) < needed:
+        return {}
 
-    # --------------------------------------------------------
-    # No numeric Location support
-    # --------------------------------------------------------
-
-    if not loc_numeric:
-        return None, None
-
-    numeric_tags = matching_numeric_tags(photo)
-
-    if not numeric_tags:
-        return None, None
-
-    unique_numeric = list(dict.fromkeys(numeric_tags))
-
-    # --------------------------------------------------------
-    # Only Location is numeric
-    # --------------------------------------------------------
-
-    if not subloc_numeric:
-
-        if len(unique_numeric) == 1:
-            return unique_numeric[0], None
-
-        # Multiple numeric tags and no way to distinguish them.
-        record_issue(
-            issues,
-            photo,
-            "Location",
-            "ambiguous_tag",
-            "Photo contains multiple numeric tags and no "
-            "numeric Sublocation classification is enabled.",
-            context={"numeric_tags": unique_numeric},
-        )
-        return None, None
-
-    # --------------------------------------------------------
-    # Both Location and Sublocation are numeric
-    # --------------------------------------------------------
-
-    if len(unique_numeric) < 2:
-        # There is only one numeric value. It cannot be reliably
-        # distinguished between Location and Sublocation.
-        record_issue(
-            issues,
-            photo,
-            "Location",
-            "missing_tag",
-            "Both Location and Sublocation are numeric, but "
-            "the photo does not contain two numeric tags.",
-            context={"numeric_tags": unique_numeric},
-        )
-        return None, None
-
-    if len(unique_numeric) > 2:
-        record_issue(
-            issues,
-            photo,
-            "Location",
-            "ambiguous_tag",
-            "Photo contains more than two numeric tags, so "
-            "Location/Sublocation cannot be determined uniquely.",
-            context={"numeric_tags": unique_numeric},
-        )
-        return None, None
-
-    first, second = unique_numeric
-    first_value = numeric_value(first)
-    second_value = numeric_value(second)
-
-    if first_value == second_value:
-        record_issue(
-            issues,
-            photo,
-            "Location",
-            "ambiguous_tag",
-            "Location and Sublocation numeric candidates are "
-            "identical and cannot be distinguished.",
-            context={"numeric_tags": unique_numeric},
-        )
-        return None, None
-
+    sorted_tags = sorted(tags, key=numeric_value)
     if loc_bigger_num:
-        location = first if first_value > second_value else second
-        sublocation = second if first_value > second_value else first
-    else:
-        location = first if first_value < second_value else second
-        sublocation = second if first_value < second_value else first
+        sorted_tags = list(reversed(sorted_tags))
 
-    return location, sublocation
+    return {
+        numeric_indices[i]: sorted_tags[i]
+        for i in range(needed)
+    }
 
 
-# ============================================================
-# SUBLOCATION CLASSIFICATION
-# ============================================================
-
-def determine_sublocation(
+def determine_level_name(
     photo: Photo,
-    sublocations: list[str],
-    subloc_numeric: bool,
+    level_index: int,
+    location_levels: list[dict],
     loc_bigger_num: bool,
-    *,
-    location: Optional[str] = None,
-    location_numeric: bool = False,
     issues: list[Issue],
+    numeric_map: Optional[dict[int, str]] = None,
 ) -> Optional[str]:
     """
-    Determine Sublocation for a photo.
-
-    Explicit Sublocation always takes precedence over numeric
-    Sublocation.
-
-    When both Location and Sublocation are numeric, the numeric
-    relationship is re-evaluated at this level.
+    Resolve the bucket name for one photo at a given location level.
     """
-
-    if not sublocations:
+    if level_index >= len(location_levels):
         return None
 
-    # --------------------------------------------------------
-    # Explicit Sublocation
-    # --------------------------------------------------------
+    level_cfg = location_levels[level_index]
+    allowed_tags = level_cfg.get("tags") or []
+    level_numeric = bool(level_cfg.get("numeric"))
+    label = _level_label(level_index)
 
-    explicit_sublocation, ambiguous = classify_explicit_tag(
-        photo,
-        sublocations,
-    )
+    explicit, ambiguous = classify_explicit_tag(photo, allowed_tags)
 
     if ambiguous:
         record_issue(
             issues,
             photo,
-            "Sublocation",
+            label,
             "ambiguous_tag",
-            "Photo contains multiple competing Sublocation tags.",
+            f"Photo contains multiple competing {label} tags.",
         )
         return None
 
-    if explicit_sublocation is not None:
-        return explicit_sublocation
+    if explicit is not None:
+        return explicit
 
-    # --------------------------------------------------------
-    # Numeric Sublocation
-    # --------------------------------------------------------
-
-    if not subloc_numeric:
+    if not level_numeric:
         return None
 
-    numeric_tags = list(dict.fromkeys(matching_numeric_tags(photo)))
+    if numeric_map is None:
+        numeric_map = map_numeric_tags_to_levels(
+            photo, location_levels, loc_bigger_num, issues
+        )
 
-    if not numeric_tags:
+    if numeric_map is None:
         return None
 
-    # If Location was explicitly classified, its numeric
-    # relationship does not need to be inferred here.
-    #
-    # We only use the two-number relationship when both levels
-    # are being represented numerically.
-    if location_numeric and len(numeric_tags) == 2:
+    if level_index in numeric_map:
+        return numeric_map[level_index]
 
-        first, second = numeric_tags
-        first_value = numeric_value(first)
-        second_value = numeric_value(second)
+    numeric_indices = [
+        i for i, level in enumerate(location_levels) if level.get("numeric")
+    ]
+    if level_index in numeric_indices:
+        record_issue(
+            issues,
+            photo,
+            label,
+            "missing_tag",
+            f"Photo does not contain enough numeric tags for {label}.",
+        )
 
-        if first_value == second_value:
+    return None
+
+
+def classify_top_level(
+    photos: list[Photo],
+    location_levels: list[dict],
+    loc_bigger_num: bool,
+    issues: list[Issue],
+) -> tuple[dict[str, list[Photo]], list[Photo]]:
+    """Classify photos into level-1 location buckets."""
+    if not location_levels:
+        return {}, list(photos)
+
+    groups: dict[str, list[Photo]] = {}
+    untagged: list[Photo] = []
+
+    for photo in photos:
+        numeric_map = map_numeric_tags_to_levels(
+            photo, location_levels, loc_bigger_num, issues
+        )
+        if numeric_map is None:
+            untagged.append(photo)
+            continue
+
+        name = determine_level_name(
+            photo,
+            0,
+            location_levels,
+            loc_bigger_num,
+            issues,
+            numeric_map=numeric_map,
+        )
+
+        if name is None:
             record_issue(
                 issues,
                 photo,
-                "Sublocation",
-                "ambiguous_tag",
-                "Numeric Location and Sublocation candidates "
-                "are identical.",
+                _level_label(0),
+                "missing_tag",
+                "Photo could not be assigned to Location Level 1 "
+                "and was placed in the top-level Untagged bucket.",
             )
-            return None
+            untagged.append(photo)
+            continue
 
-        if loc_bigger_num:
-            sublocation = (
-                second
-                if first_value > second_value
-                else first
+        groups.setdefault(name, []).append(photo)
+
+    return groups, untagged
+
+
+def process_child_levels(
+    parent_group: dict[str, Any],
+    level_index: int,
+    location_levels: list[dict],
+    fixture_types: list[str],
+    installers: list[str],
+    phases: list[str],
+    serial_tag: str,
+    loc_bigger_num: bool,
+    issues: list[Issue],
+):
+    """
+    Process optional location levels 2–5 under a parent bucket.
+    Unmatched photos remain at the parent and continue down the tree.
+    """
+    photos = parent_group.pop("_photos")
+
+    if level_index >= len(location_levels):
+        parent_group["_photos"] = photos
+        process_type_level(
+            parent_group,
+            fixture_types,
+            installers,
+            phases,
+            serial_tag,
+            issues,
+        )
+        return
+
+    level_cfg = location_levels[level_index]
+    if not (level_cfg.get("tags") or level_cfg.get("numeric")):
+        parent_group["_photos"] = photos
+        process_child_levels(
+            parent_group,
+            level_index + 1,
+            location_levels,
+            fixture_types,
+            installers,
+            phases,
+            serial_tag,
+            loc_bigger_num,
+            issues,
+        )
+        return
+
+    child_groups: dict[str, list[Photo]] = {}
+    unmatched: list[Photo] = []
+
+    for photo in photos:
+        numeric_map = map_numeric_tags_to_levels(
+            photo, location_levels, loc_bigger_num, issues
+        )
+        if numeric_map is None:
+            unmatched.append(photo)
+            continue
+
+        name = determine_level_name(
+            photo,
+            level_index,
+            location_levels,
+            loc_bigger_num,
+            issues,
+            numeric_map=numeric_map,
+        )
+        if name is None:
+            unmatched.append(photo)
+        else:
+            child_groups.setdefault(name, []).append(photo)
+
+    if not child_groups:
+        parent_group["_photos"] = photos
+        if level_index + 1 >= len(location_levels):
+            process_type_level(
+                parent_group,
+                fixture_types,
+                installers,
+                phases,
+                serial_tag,
+                issues,
             )
         else:
-            sublocation = (
-                second
-                if first_value < second_value
-                else first
+            process_child_levels(
+                parent_group,
+                level_index + 1,
+                location_levels,
+                fixture_types,
+                installers,
+                phases,
+                serial_tag,
+                loc_bigger_num,
+                issues,
             )
+        return
 
-        return sublocation
+    parent_group.setdefault("sublocations", [])
 
-    # If exactly one numeric tag remains available, it can serve
-    # as the Sublocation.
-    if len(numeric_tags) == 1:
-        return numeric_tags[0]
+    for child_name, child_photos in child_groups.items():
+        child_group = {
+            "name": child_name,
+            "_photos": child_photos,
+        }
+        if level_index + 1 >= len(location_levels):
+            process_type_level(
+                child_group,
+                fixture_types,
+                installers,
+                phases,
+                serial_tag,
+                issues,
+            )
+        else:
+            process_child_levels(
+                child_group,
+                level_index + 1,
+                location_levels,
+                fixture_types,
+                installers,
+                phases,
+                serial_tag,
+                loc_bigger_num,
+                issues,
+            )
+        parent_group["sublocations"].append(child_group)
 
-    # More than one candidate with no deterministic way to
-    # distinguish them.
-    record_issue(
-        issues,
-        photo,
-        "Sublocation",
-        "ambiguous_tag",
-        "Multiple numeric Sublocation candidates exist.",
-        context={"numeric_tags": numeric_tags},
-    )
-
-    return None
+    if unmatched:
+        parent_group["_photos"] = unmatched
+        if level_index + 1 >= len(location_levels):
+            process_type_level(
+                parent_group,
+                fixture_types,
+                installers,
+                phases,
+                serial_tag,
+                issues,
+            )
+        else:
+            process_child_levels(
+                parent_group,
+                level_index + 1,
+                location_levels,
+                fixture_types,
+                installers,
+                phases,
+                serial_tag,
+                loc_bigger_num,
+                issues,
+            )
 
 
 # ============================================================
@@ -951,9 +1041,11 @@ def process_type_group(
     # Serial-tagged photos
     # --------------------------------------------------------
 
+    serial_tags = parse_serial_tags(serial_tag)
+
     for photo in photos:
 
-        if serial_tag in photo.tags:
+        if serial_tags and any(t in photo.tags for t in serial_tags):
             serial_photos.append(photo)
         else:
             non_serial_photos.append(photo)
@@ -1062,208 +1154,6 @@ def process_type_level(
 
 
 # ============================================================
-# SUBLOCATION LEVEL
-# ============================================================
-
-def process_sublocations(
-    location_group: dict[str, Any],
-    sublocations: list[str],
-    fixture_types: list[str],
-    installers: list[str],
-    phases: list[str],
-    serial_tag: str,
-    subloc_numeric: bool,
-    loc_bigger_num: bool,
-    issues: list[Issue],
-):
-    """
-    Process the optional Sublocation layer.
-
-    Photos that do not match a Sublocation proceed directly
-    into Type processing at the Location level.
-    """
-
-    photos = location_group.pop("_photos")
-
-    # --------------------------------------------------------
-    # Sublocations disabled
-    # --------------------------------------------------------
-
-    if not sublocations:
-
-        location_group["_photos"] = photos
-
-        process_type_level(
-            location_group,
-            fixture_types,
-            installers,
-            phases,
-            serial_tag,
-            issues,
-        )
-
-        return
-
-    # --------------------------------------------------------
-    # Classify Sublocations
-    # --------------------------------------------------------
-
-    sublocation_groups: dict[str, list[Photo]] = {}
-    unmatched: list[Photo] = []
-
-    for photo in photos:
-
-        sublocation = determine_sublocation(
-            photo,
-            sublocations,
-            subloc_numeric,
-            loc_bigger_num,
-            issues=issues,
-        )
-
-        if sublocation is None:
-            unmatched.append(photo)
-        else:
-            sublocation_groups.setdefault(
-                sublocation,
-                [],
-            ).append(photo)
-
-    # --------------------------------------------------------
-    # No Sublocation matches
-    #
-    # Behaves exactly like an empty sublocations list.
-    # --------------------------------------------------------
-
-    if not sublocation_groups:
-
-        location_group["_photos"] = photos
-
-        process_type_level(
-            location_group,
-            fixture_types,
-            installers,
-            phases,
-            serial_tag,
-            issues,
-        )
-
-        return
-
-    # --------------------------------------------------------
-    # Process matched Sublocations
-    # --------------------------------------------------------
-
-    location_group["sublocations"] = []
-
-    for sublocation_name, sublocation_photos in sublocation_groups.items():
-
-        sublocation_group = {
-            "name": sublocation_name,
-            "_photos": sublocation_photos,
-        }
-
-        process_type_level(
-            sublocation_group,
-            fixture_types,
-            installers,
-            phases,
-            serial_tag,
-            issues,
-        )
-
-        location_group["sublocations"].append(
-            sublocation_group
-        )
-
-    # --------------------------------------------------------
-    # Process photos that had no Sublocation.
-    #
-    # They remain directly under the Location.
-    # --------------------------------------------------------
-
-    if unmatched:
-
-        location_group["_photos"] = unmatched
-
-        process_type_level(
-            location_group,
-            fixture_types,
-            installers,
-            phases,
-            serial_tag,
-            issues,
-        )
-
-
-# ============================================================
-# LOCATION LEVEL
-# ============================================================
-
-def classify_locations(
-    photos: list[Photo],
-    locations: list[str],
-    loc_numeric: bool,
-    subloc_numeric: bool,
-    loc_bigger_num: bool,
-    issues: list[Issue],
-) -> tuple[dict[str, list[Photo]], list[Photo], dict[str, str]]:
-    """
-    Classify photos into Locations.
-
-    Returns:
-
-        location_groups
-        untagged_photos
-        numeric_location_names
-
-    numeric_location_names maps the output bucket name to the
-    numeric value used to create it.
-    """
-
-    location_groups: dict[str, list[Photo]] = {}
-    untagged: list[Photo] = []
-    numeric_locations: dict[str, str] = {}
-
-    for photo in photos:
-
-        location, _numeric_sublocation_candidate = determine_location(
-            photo,
-            locations,
-            loc_numeric,
-            subloc_numeric,
-            loc_bigger_num,
-            issues,
-        )
-
-        if location is None:
-
-            record_issue(
-                issues,
-                photo,
-                "Location",
-                "missing_tag",
-                (
-                    "Photo could not be assigned to a Location "
-                    "and was placed in the top-level Untagged bucket."
-                ),
-            )
-
-            untagged.append(photo)
-            continue
-
-        location_groups.setdefault(
-            location,
-            [],
-        ).append(photo)
-
-        if is_numeric_tag(location):
-            numeric_locations[location] = location
-
-    return location_groups, untagged, numeric_locations
-
-
-# ============================================================
 # NUMERIC BUCKET SORTING
 # ============================================================
 
@@ -1334,11 +1224,16 @@ def recursively_sort_numeric_buckets(
 def clean_internal_fields(node: Any):
     """
     Remove temporary internal fields such as _photos.
+
+    Any photos still sitting in _photos are merged into untagged
+    rather than discarded.
     """
 
     if isinstance(node, dict):
 
-        node.pop("_photos", None)
+        stranded = node.pop("_photos", None)
+        if stranded:
+            node.setdefault("untagged", []).extend(stranded)
 
         for value in node.values():
             clean_internal_fields(value)
@@ -1349,6 +1244,26 @@ def clean_internal_fields(node: Any):
             clean_internal_fields(item)
 
 
+def count_structure_photos(structure: dict[str, Any]) -> int:
+    """
+    Count every photo placed in the final lighting structure.
+    """
+
+    def _count_node(node: dict[str, Any]) -> int:
+        total = len(node.get("untagged", []))
+        for type_group in node.get("types", []):
+            total += len(type_group.get("untagged", []))
+            for fixture in type_group.get("fixtures", []):
+                total += len(fixture.get("photos", []))
+        for sublocation in node.get("sublocations", []):
+            total += _count_node(sublocation)
+        return total
+
+    total = sum(_count_node(location) for location in structure.get("locations", []))
+    total += len(structure.get("untagged", []))
+    return total
+
+
 # ============================================================
 # MAIN FUNCTION
 # ============================================================
@@ -1356,24 +1271,24 @@ def clean_internal_fields(node: Any):
 def sort_lighting_photos(
     photos: list[Photo],
     installers: list[str],
-    locations: list[str],
-    sublocations: list[str],
+    location_levels: list[dict],
     fixture_types: list[str],
     phases: list[str],
     serial_tag: str,
-    loc_numeric: bool,
-    subloc_numeric: bool,
     loc_bigger_num: bool,
 ) -> SortResult:
     """
     Main Lighting Closeout Photo Sorting Algorithm.
 
-    Returns:
-        SortResult(
-            structure=...,
-            issues=...
-        )
+    location_levels: list of {"tags": list[str], "numeric": bool}, max 5.
     """
+
+    photos = _normalize_photos(photos)
+    installers = _normalize_tag_list(installers)
+    fixture_types = _normalize_tag_list(fixture_types)
+    phases = _normalize_tag_list(phases)
+    location_levels = _normalize_location_levels(location_levels)
+    serial_tag = _normalize_serial_tag(serial_tag)
 
     issues: list[Issue] = []
 
@@ -1382,71 +1297,55 @@ def sort_lighting_photos(
         "untagged": [],
     }
 
-    # ========================================================
-    # LOCATION CLASSIFICATION
-    # ========================================================
-
-    location_groups, location_untagged, numeric_locations = (
-        classify_locations(
-            photos,
-            locations,
-            loc_numeric,
-            subloc_numeric,
-            loc_bigger_num,
-            issues,
-        )
+    location_groups, location_untagged = classify_top_level(
+        photos,
+        location_levels,
+        loc_bigger_num,
+        issues,
     )
 
-    # --------------------------------------------------------
-    # Top-level Untagged
-    # --------------------------------------------------------
-
-    structure["untagged"].extend(
-        location_untagged
-    )
-
-    # ========================================================
-    # PROCESS EACH LOCATION
-    # ========================================================
+    structure["untagged"].extend(location_untagged)
 
     for location_name, location_photos in location_groups.items():
-
         location_group = {
             "name": location_name,
             "_photos": location_photos,
         }
 
-        process_sublocations(
-            location_group,
-            sublocations,
-            fixture_types,
-            installers,
-            phases,
-            serial_tag,
-            subloc_numeric,
-            loc_bigger_num,
-            issues,
+        if len(location_levels) > 1:
+            process_child_levels(
+                location_group,
+                1,
+                location_levels,
+                fixture_types,
+                installers,
+                phases,
+                serial_tag,
+                loc_bigger_num,
+                issues,
+            )
+        else:
+            process_type_level(
+                location_group,
+                fixture_types,
+                installers,
+                phases,
+                serial_tag,
+                issues,
+            )
+
+        structure["locations"].append(location_group)
+
+    recursively_sort_numeric_buckets(structure)
+    clean_internal_fields(structure)
+
+    input_count = len(photos)
+    output_count = count_structure_photos(structure)
+    if input_count != output_count:
+        raise ValueError(
+            "Lighting sort photo count mismatch: "
+            f"{input_count} in, {output_count} out"
         )
-
-        structure["locations"].append(
-            location_group
-        )
-
-    # ========================================================
-    # FINAL SORTING
-    # ========================================================
-
-    recursively_sort_numeric_buckets(
-        structure
-    )
-
-    # ========================================================
-    # REMOVE TEMPORARY INTERNAL DATA
-    # ========================================================
-
-    clean_internal_fields(
-        structure
-    )
 
     return SortResult(
         structure=structure,

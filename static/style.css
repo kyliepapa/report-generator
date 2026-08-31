@@ -53,6 +53,7 @@ html, body {
 .sidebar {
     width: 340px;
     min-width: 300px;
+    flex-shrink: 0;
     background: var(--surface);
     border-right: 1px solid var(--border);
     display: flex;
@@ -108,7 +109,19 @@ html, body {
 .field-group {
     display: flex;
     flex-direction: column;
-    gap: 7px;
+    gap: 0;
+    margin-bottom: 16px;
+}
+
+.field-group:last-child {
+    margin-bottom: 0;
+}
+
+.field-heading {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 6px;
 }
 
 .field-label {
