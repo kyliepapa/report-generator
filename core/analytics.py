@@ -14,6 +14,7 @@ import os
 import re
 import threading
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from typing import Any, Dict, List, Optional
 
 import core.paths as paths
@@ -25,7 +26,7 @@ _RUN_TYPES = frozenset({"report", "pdf"})
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    return datetime.now(ZoneInfo("America/Los_Angeles")).isoformat(timespec="seconds")
 
 
 def slugify_user_id(name: str) -> str:
