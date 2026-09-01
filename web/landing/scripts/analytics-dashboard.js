@@ -72,7 +72,7 @@ function renderOverviewCards(data) {
 function formatTs(ts) {
     if (!ts) return '—';
     try {
-        return new Date(ts).toLocaleString();
+        return new Date(ts).toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
     } catch (e) {
         return ts;
     }

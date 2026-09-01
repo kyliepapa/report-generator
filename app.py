@@ -15,6 +15,7 @@ routes.
 import os
 from flask import Flask, send_from_directory
 
+import core.timezone  # noqa: F401 -- configure Pacific TZ before other imports use datetime
 import core.paths as paths  # noqa: F401 -- imported for its side effect of
                              # creating STATIC_DIR/REPORTS_DIR on startup
 from web.routes import register_routes

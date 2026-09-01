@@ -227,7 +227,6 @@
             e = null;
         }
         if (e && (e.shiftKey || e.ctrlKey || e.metaKey)) return;
-        if (window._editMode) return;
         if (window._dragActive) return;
         if (!card) return;
 

@@ -5,7 +5,7 @@ file path constants and the read/write/append helpers now come from
 core.paths instead of being defined locally.
 """
 
-from datetime import datetime
+from core.timezone import now_formatted
 
 from flask import Blueprint, request, jsonify
 
@@ -27,7 +27,7 @@ def submit_rnr():
     if not message or not submitter:
         return jsonify({'error': 'Missing fields'}), 400
 
-    ts    = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    ts    = now_formatted('%Y-%m-%d %H:%M:%S')
     entry = f"{ts}\n{message}\nSubmitted by: {submitter}\n\n"
     paths.append_file(paths.REPNREQ_FILE, entry)
     return jsonify({'ok': True})

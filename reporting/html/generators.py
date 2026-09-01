@@ -45,7 +45,7 @@ Multi-measure tabbed report (generate_html_report):
 
 import json
 import re
-from datetime import datetime
+from core.timezone import now_formatted
 
 import core.config as config
 import core.paths as paths
@@ -87,7 +87,7 @@ def _render_unit_phase(structure, special_rooms_structure=None, zone_prefix=""):
 
 
 def generate_html_unit_phase(structure, special_rooms_structure=None):
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = now_formatted("%Y-%m-%d %H:%M")
     title = config.PROJECT_NAME or config.PROJECT_ID
 
     html = _make_head(title)
@@ -140,7 +140,7 @@ def _render_bldg_unit_phase(structure, special_rooms_structure=None, zone_prefix
 
 
 def generate_html_bldg_unit_phase(structure, special_rooms_structure=None):
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = now_formatted("%Y-%m-%d %H:%M")
     title = config.PROJECT_NAME or config.PROJECT_ID
 
     html = _make_head(title)
@@ -191,7 +191,7 @@ def _render_unit_bath_phase(structure, special_rooms_structure=None, zone_prefix
 
 
 def generate_html_unit_bath_phase(structure, special_rooms_structure=None):
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = now_formatted("%Y-%m-%d %H:%M")
     title = config.PROJECT_NAME or config.PROJECT_ID
 
     html = _make_head(title)
@@ -249,7 +249,7 @@ def _render_full_hierarchy(structure, special_rooms_structure=None, zone_prefix=
 
 
 def generate_html_full_hierarchy(structure, special_rooms_structure=None):
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = now_formatted("%Y-%m-%d %H:%M")
     title = config.PROJECT_NAME or config.PROJECT_ID
 
     html = _make_head(title)
@@ -579,7 +579,7 @@ def _render_lighting(structure, special_rooms_structure=None, phases=None, zone_
 
 
 def generate_html_lighting(structure, special_rooms_structure=None, phases=None):
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = now_formatted("%Y-%m-%d %H:%M")
     title = config.PROJECT_NAME or config.PROJECT_ID
 
     html = _make_head(title, extra_css=_LIGHTING_EXTRA_CSS)
@@ -717,7 +717,7 @@ def _render_subcontracted(structure, special_rooms_structure=None, zone_prefix="
 
 
 def generate_html_subcontracted(structure, special_rooms_structure=None):
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = now_formatted("%Y-%m-%d %H:%M")
     title = config.PROJECT_NAME or config.PROJECT_ID
 
     html = _make_head(title)
@@ -789,7 +789,7 @@ def _render_manual_arrange(structure, special_rooms_structure=None, zone_prefix=
 
 
 def generate_html_manual_arrange(structure, special_rooms_structure=None):
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = now_formatted("%Y-%m-%d %H:%M")
     title = config.PROJECT_NAME or config.PROJECT_ID
 
     html = _make_head(title)
@@ -858,7 +858,7 @@ def _render_heat_pump(structure, special_rooms_structure=None, zone_prefix=""):
 
 
 def generate_html_heat_pump(structure, special_rooms_structure=None):
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = now_formatted("%Y-%m-%d %H:%M")
     title = config.PROJECT_NAME or config.PROJECT_ID
 
     html = _make_head(title)
@@ -1002,7 +1002,7 @@ def generate_html_report(measures, unknown_photos=None, unknown_photos_by_projec
     Each tab's internal zone IDs are scoped by that measure's id (see
     module docstring) so same-shape measures don't collide.
     """
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = now_formatted("%Y-%m-%d %H:%M")
     title = title or config.PROJECT_NAME or config.PROJECT_ID
 
     tabs = []

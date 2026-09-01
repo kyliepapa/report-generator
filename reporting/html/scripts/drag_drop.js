@@ -17,18 +17,18 @@ const MANUAL_ARRANGE_SORT_MODE = 'manual_arrange_sequence';
 
 const SORTABLE_SCROLL_OPTS = {
     scroll: true,
-    scrollSensitivity: 120,
-    scrollSpeed: 45,
+    scrollSensitivity: 90,
+    scrollSpeed: 30,
     bubbleScroll: true,
 };
 
 // ── Auto-scroll during drag ────────────────────────────────
 let _scrollDir = 0; // -1 = up, 1 = down, 0 = none
 let _sortableDragActive = false;
-const _topScrollZone = 200;
-const _bottomScrollZone = 120;
-const _minScrollIntensity = 0.15;
-const _maxScrollSpeed = 55;
+const _topScrollZone = 170;
+const _bottomScrollZone = 85;
+const _minScrollIntensity = 0.10;
+const _maxScrollSpeed = 38;
 let _sortablePointerHandler = null;
 
 function _toolbarScrollOffset() {
@@ -86,9 +86,13 @@ function _updateScrollFromDrag(evt) {
         ? (oe.clientY != null ? oe.clientY : (oe.touches && oe.touches[0] ? oe.touches[0].clientY : null))
         : null;
     const rect = evt.dragged ? evt.dragged.getBoundingClientRect() : null;
+    const toolbarH = _toolbarScrollOffset();
+    const pointerInToolbar = pointerY != null && pointerY < toolbarH;
 
-    const upFromPointer = pointerY != null ? _scrollIntensityUp(pointerY, false) : 0;
-    const downFromPointer = pointerY != null ? _scrollIntensityDown(pointerY) : 0;
+    const upFromPointer = (pointerY != null && !pointerInToolbar)
+        ? _scrollIntensityUp(pointerY, false) : 0;
+    const downFromPointer = (pointerY != null && !pointerInToolbar)
+        ? _scrollIntensityDown(pointerY) : 0;
     const upFromRect = rect ? _scrollIntensityUp(rect.top, true) : 0;
     const downFromRect = rect ? _scrollIntensityDown(rect.bottom) : 0;
 
@@ -151,7 +155,7 @@ function toggleEditMode() {
     editBtn.classList.toggle('active', window._editMode);
     editBtn.textContent = window._editMode ? '✏️ Editing On' : '✏️ Edit Photos';
     document.getElementById('edit-mode-hint').textContent = window._editMode
-        ? 'Drag photos between zones · Shift+click to multi-select · Ctrl+Z to undo'
+        ? 'Drag photos between zones · Shift+click to select · Click to preview · Ctrl+Z to undo'
         : 'Enable to rearrange photos';
     if (window._editMode) {
         initAllSortables();
@@ -831,11 +835,11 @@ document.addEventListener('click', function(e) {
 
     const card = e.target.closest('.photo-card');
     const sortableGrid = card ? _sortableGridForCard(card) : null;
-    if (card && sortableGrid && window._editMode) {
+    if (card && sortableGrid && window._editMode && e.shiftKey) {
         e.preventDefault();
         e.stopPropagation();
         clearHeadingSelection();
-        selectPhotoCard(card, e.shiftKey);
+        selectPhotoCard(card, true);
         return;
     }
 

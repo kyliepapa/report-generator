@@ -16,7 +16,7 @@ Relocated from pdf_generator.py with no logic changes, except:
 
 import os
 import tempfile
-from datetime import datetime
+from core.timezone import format_timestamp, now_formatted
 from io import BytesIO
 
 import requests
@@ -400,7 +400,7 @@ def build_captions(photo, side, show_tags=True, compact=False):
         return [Paragraph("—", cs)]
     ts = "Unknown"
     try:
-        ts = datetime.fromtimestamp(int(photo.get("captured_at"))).strftime("%Y-%m-%d %H:%M")
+        ts = format_timestamp(int(photo.get("captured_at")))
     except:
         pass
     items.append(Paragraph(f"📷 {ts}", cs))
@@ -435,7 +435,7 @@ def build_captions_linear(photo, show_tags=True):
         return [Paragraph("—", style_lin_cap)]
     ts = "Unknown"
     try:
-        ts = datetime.fromtimestamp(int(photo.get("captured_at"))).strftime("%Y-%m-%d %H:%M")
+        ts = format_timestamp(int(photo.get("captured_at")))
     except:
         pass
     items.append(Paragraph(f"📷  {ts}", style_lin_cap))

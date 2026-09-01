@@ -16,8 +16,8 @@ every call site before the generator functions get relocated next.
 
 import html as html_module
 import json
-from datetime import datetime
 
+from core.timezone import format_timestamp
 from reporting.html import assets
 
 
@@ -38,8 +38,7 @@ def make_photo_card_html(photo_data, idx=None, zone_id=None):
     timestamp_str = "Unknown"
     if captured_at:
         try:
-            dt = datetime.fromtimestamp(int(captured_at))
-            timestamp_str = dt.strftime("%Y-%m-%d %H:%M")
+            timestamp_str = format_timestamp(int(captured_at))
         except:
             timestamp_str = "Unknown"
 

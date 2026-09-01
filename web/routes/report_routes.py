@@ -14,6 +14,8 @@ import hashlib
 from collections import OrderedDict
 from datetime import datetime
 
+from core.timezone import from_timestamp, now_formatted
+
 from flask import Blueprint, render_template, request, send_from_directory, jsonify
 
 import core.config as config
@@ -60,13 +62,13 @@ def _clean_tag_list(value):
 
 
 def _append_usage_log(project_id, project_name):
-    ts    = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    ts    = now_formatted('%Y-%m-%d %H:%M:%S')
     entry = f"{ts} | Project ID: {project_id} | Project Name: {project_name}\n"
     paths.append_file(paths.USAGE_LOGS_FILE, entry)
 
 
 def _append_package_usage_log(package_id, package_name, complete_projects):
-    ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    ts = now_formatted('%Y-%m-%d %H:%M:%S')
     proj_str = ", ".join(
         f"{p['id']} ({p['nickname']})" for p in complete_projects
     )
@@ -302,7 +304,7 @@ def _convert_photos_for_lighting(raw_photos):
         tags = _clean_tag_list(p.get("tag_names", [])) # Added helper call here to clean tags from CC
         raw_ts = p.get("created_at") or p.get("captured_at") or 0
         if isinstance(raw_ts, (int, float)):
-            ts = datetime.fromtimestamp(raw_ts)
+            ts = from_timestamp(raw_ts)
         elif isinstance(raw_ts, str):
             try:
                 ts = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))

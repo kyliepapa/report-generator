@@ -13,11 +13,11 @@ import json
 import os
 import re
 import threading
-from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import core.paths as paths
+from core.timezone import now_iso
 from datasets.lighting.config import parse_location_levels
 
 _lock = threading.Lock()
@@ -26,7 +26,7 @@ _RUN_TYPES = frozenset({"report", "pdf"})
 
 
 def _now_iso() -> str:
-    return datetime.now(ZoneInfo("America/Los_Angeles")).isoformat(timespec="seconds")
+    return now_iso()
 
 
 def slugify_user_id(name: str) -> str:

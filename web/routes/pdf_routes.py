@@ -224,7 +224,7 @@ def start_pdf_job():
             # requested measure using the correct (project_id, measure_id) cache
             # key -- NOT the bare dataset_key string.
             if measures_included is not None:
-                from datetime import datetime as _dt
+                from core.timezone import now_formatted
                 config.PROJECT_ID = cache_key
                 config.PROJECT_NAME = project_name
                 cached_entries = job_manager.get_all_sorted_structures(cache_key)
@@ -296,7 +296,7 @@ def start_pdf_job():
                     "project_name":             project_name,
                     "project_name_upper":        (project_name or cache_key or "").upper(),
                     "address":                  project_address,
-                    "date_generated":           _dt.now().strftime("%B %d, %Y"),
+                    "date_generated":           now_formatted("%B %d, %Y"),
                     "total_photos":             visible_count,
                     "total_buildings":          0,
                     "total_units":              0,

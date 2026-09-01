@@ -51,7 +51,7 @@ import core.config as config
 import core.paths as paths
 import core.job_manager as job_manager
 
-from datetime import datetime
+from core.timezone import now_formatted
 
 # Matches the sort_mode_map contract in datasets/base.py -- Lighting's
 # one structural shape, same literal used by generators.determine_html_method.
@@ -135,7 +135,7 @@ def build_pdf_context(structure, photos, special_rooms_structure=None):
         "project_name": config.PROJECT_NAME or config.PROJECT_ID,
         "project_name_upper": (config.PROJECT_NAME or config.PROJECT_ID).upper(),
         "address": job_manager.get_project_address(config.PROJECT_ID),
-        "date_generated": datetime.now().strftime("%B %d, %Y"),
+        "date_generated": now_formatted("%B %d, %Y"),
         "total_photos": total_photos,
         "total_buildings": total_buildings,
         "total_units": total_units,
@@ -253,12 +253,12 @@ def _measure_heading_size(measure_id, pdf_options):
     return "normal"
 
 
-def _standalone_measure_heading_block(measure_hdr_pending, after_cover=False):
+def _standalone_measure_heading_block(measure_hdr_pending, omit_leading_break=False):
     """Return top-level flowables for full-page measure headings."""
     if not measure_hdr_pending:
         return []
     block = list(measure_hdr_pending)
-    if after_cover and block and isinstance(block[0], PageBreak):
+    if omit_leading_break and block and isinstance(block[0], PageBreak):
         block = block[1:]
     return block
 
@@ -612,7 +612,7 @@ def _merge_partial_pdfs(partial_paths, save_path):
         writer.write(out_f)
 
 
-def _build_measure_elements(m_entry, pdf_options, is_linear, hide_empty, hidden_urls, sub_unit_label, after_cover=False):
+def _build_measure_elements(m_entry, pdf_options, is_linear, hide_empty, hidden_urls, sub_unit_label, omit_leading_break=False):
     """Build platypus elements for one measure in a multi-measure report."""
     elements = []
     m_id        = m_entry.get("measure_id") or ""
@@ -634,7 +634,7 @@ def _build_measure_elements(m_entry, pdf_options, is_linear, hide_empty, hidden_
     measure_hdr_used = [False]
 
     if heading_is_full_page and measure_hdr_pending:
-        elements.extend(_standalone_measure_heading_block(measure_hdr_pending, after_cover=after_cover))
+        elements.extend(_standalone_measure_heading_block(measure_hdr_pending, omit_leading_break=omit_leading_break))
         measure_hdr_used[0] = True
 
     def _with_measure_hdr(headers):
@@ -915,7 +915,7 @@ def generate_pdf_report(context, pdf_options=None, progress_callback=None):
                     build_cover_page(context, pdf_options, is_linear, base_dir, elements)
                 elements.extend(_build_measure_elements(
                     m_entry, pdf_options, is_linear, hide_empty, hidden_urls, sub_unit_label,
-                    after_cover=(idx == 0),
+                    omit_leading_break=True,
                 ))
 
                 mid = _safe_partial_name(m_entry.get("measure_id"), f"measure_{idx}")
