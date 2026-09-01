@@ -50,6 +50,7 @@ from datetime import datetime
 import core.config as config
 import core.paths as paths
 from core.photo_urls import resolve_image_urls
+from core.tag_parser import title_case_tag_text
 from reporting.html import assets
 from reporting.html.shared_components import _make_head, _make_tail, _phase_section, _zone_id, make_photo_card_html, _photo_grid
 from reporting.pdf.heading_catalog import build_automatic_heading_catalog
@@ -419,7 +420,7 @@ def _lighting_photo_dict(photo):
 def _normalize_lighting_tag(tag):
     """ALL-CAPS (or slug-style) tag -> Title Case display text."""
     text = str(tag).replace("_", " ").replace("-", " ").strip()
-    return text.title() if text else ""
+    return title_case_tag_text(text) if text else ""
 
 
 def _lighting_phase_section(photos, phase_label, phase_index, zone_id):

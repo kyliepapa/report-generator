@@ -150,8 +150,13 @@
     .sortable-chosen {
         box-shadow: 0 0 0 2px #2e86de;
     }
+    body.edit-mode .photo-card.multi-drag-source {
+        opacity: 0.4;
+        pointer-events: none;
+    }
     body.edit-mode .subcontract-grid .photo-card,
-    body.edit-mode .subcontract-grid .subcontract-heading {
+    body.edit-mode .subcontract-grid .subcontract-heading,
+    body.edit-mode .manual-arrange-bucket .photo-card {
         cursor: grab;
     }
 

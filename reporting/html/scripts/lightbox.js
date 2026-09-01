@@ -221,7 +221,13 @@
         document.removeEventListener('pointerup', onCropPointerUp);
     }
 
-    window.openLightboxFromCard = function(card) {
+    window.openLightboxFromCard = function(e, card) {
+        if (arguments.length === 1) {
+            card = e;
+            e = null;
+        }
+        if (e && (e.shiftKey || e.ctrlKey || e.metaKey)) return;
+        if (window._editMode) return;
         if (window._dragActive) return;
         if (!card) return;
 

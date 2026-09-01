@@ -24,7 +24,7 @@ from collections import defaultdict
 import core.config as config
 from core.photo_urls import resolve_image_urls
 from core.sort_engine import get_sort_key
-from core.tag_parser import get_special_room_match
+from core.tag_parser import get_special_room_match, title_case_tag_text
 
 
 # ─────────────────────────────────────────
@@ -68,7 +68,7 @@ def build_unit_bathroom_map(photos):
 #  instead of ~1700 lines away in the same file)
 # ─────────────────────────────────────────
 def title_case_tag(tag):
-    return " ".join(w.capitalize() for w in tag.split())
+    return title_case_tag_text(tag)
 
 
 def build_used_tag_string(bldg, unit, bath, phase):
@@ -81,9 +81,9 @@ def build_used_tag_string(bldg, unit, bath, phase):
     if unit and unit != "UNASSIGNED":
         parts.append(f"Unit {unit}")
     if bath and bath != "OTHER":
-        parts.append(f"{bath.title()} {sub_unit_label}")
+        parts.append(f"{title_case_tag_text(bath)} {sub_unit_label}")
     if phase and phase != "UNTAGGED":
-        parts.append(phase.title())
+        parts.append(title_case_tag_text(phase))
     return " — ".join(parts)
 
 

@@ -17,37 +17,118 @@ const MANUAL_ARRANGE_SORT_MODE = 'manual_arrange_sequence';
 
 const SORTABLE_SCROLL_OPTS = {
     scroll: true,
-    scrollSensitivity: 60,
-    scrollSpeed: 20,
+    scrollSensitivity: 120,
+    scrollSpeed: 45,
     bubbleScroll: true,
 };
 
 // ── Auto-scroll during drag ────────────────────────────────
 let _scrollDir = 0; // -1 = up, 1 = down, 0 = none
-const _scrollMargin = 80; // px from edge
-const _maxScrollSpeed = 20;
+let _sortableDragActive = false;
+const _topScrollZone = 200;
+const _bottomScrollZone = 120;
+const _minScrollIntensity = 0.15;
+const _maxScrollSpeed = 55;
+let _sortablePointerHandler = null;
 
-function _updateScrollDirection(clientY) {
+function _toolbarScrollOffset() {
+    const toolbar = document.getElementById('dnd-toolbar');
+    return toolbar ? toolbar.offsetHeight : 0;
+}
+
+function _scrollIntensityUp(clientY, isElementEdge) {
+    const toolbarH = _toolbarScrollOffset();
+    const topEnd = toolbarH + _topScrollZone;
+
+    if (clientY >= topEnd) return 0;
+
+    if (!isElementEdge && clientY < toolbarH) {
+        return 0;
+    }
+
+    if (isElementEdge && clientY < toolbarH) {
+        const depth = 1 + (toolbarH - clientY) / _topScrollZone;
+        return Math.max(_minScrollIntensity, Math.min(depth * depth, 1.5));
+    }
+
+    const depth = (topEnd - clientY) / _topScrollZone;
+    return Math.max(_minScrollIntensity, depth * depth);
+}
+
+function _scrollIntensityDown(clientY) {
     const h = window.innerHeight;
+    const bottomStart = h - _bottomScrollZone;
+    if (clientY <= bottomStart) return 0;
+    const depth = (clientY - bottomStart) / _bottomScrollZone;
+    return Math.max(_minScrollIntensity, depth * depth);
+}
 
-    if (clientY < _scrollMargin) {
-        // Closer to top = faster scroll
-        const intensity = (_scrollMargin - clientY) / _scrollMargin;
-        _scrollDir = -intensity;
-    } else if (clientY > h - _scrollMargin) {
-        // Closer to bottom = faster scroll
-        const intensity = (clientY - (h - _scrollMargin)) / _scrollMargin;
-        _scrollDir = intensity;
+function _applyScrollIntensities(upIntensity, downIntensity) {
+    if (upIntensity > downIntensity && upIntensity > 0) {
+        _scrollDir = -upIntensity;
+    } else if (downIntensity > 0) {
+        _scrollDir = downIntensity;
     } else {
         _scrollDir = 0;
     }
 }
 
+function _updateScrollDirection(clientY) {
+    _applyScrollIntensities(
+        _scrollIntensityUp(clientY, false),
+        _scrollIntensityDown(clientY),
+    );
+}
+
+function _updateScrollFromDrag(evt) {
+    const oe = evt.originalEvent;
+    const pointerY = oe
+        ? (oe.clientY != null ? oe.clientY : (oe.touches && oe.touches[0] ? oe.touches[0].clientY : null))
+        : null;
+    const rect = evt.dragged ? evt.dragged.getBoundingClientRect() : null;
+
+    const upFromPointer = pointerY != null ? _scrollIntensityUp(pointerY, false) : 0;
+    const downFromPointer = pointerY != null ? _scrollIntensityDown(pointerY) : 0;
+    const upFromRect = rect ? _scrollIntensityUp(rect.top, true) : 0;
+    const downFromRect = rect ? _scrollIntensityDown(rect.bottom) : 0;
+
+    _applyScrollIntensities(
+        Math.max(upFromPointer, upFromRect),
+        Math.max(downFromPointer, downFromRect),
+    );
+}
+
+function _sortableOnMove(evt) {
+    _updateScrollFromDrag(evt);
+    return true;
+}
+
 function _autoScrollLoop() {
-    if (window._dragActive && _scrollDir !== 0) {
+    if ((window._dragActive || _sortableDragActive) && _scrollDir !== 0) {
         window.scrollBy(0, _scrollDir * _maxScrollSpeed);
     }
     requestAnimationFrame(_autoScrollLoop);
+}
+
+function _startSortableAutoScroll() {
+    _sortableDragActive = true;
+    if (_sortablePointerHandler) return;
+    _sortablePointerHandler = function(e) {
+        const y = e.clientY != null ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : null);
+        if (y != null) _updateScrollDirection(y);
+    };
+    document.addEventListener('pointermove', _sortablePointerHandler, { passive: true });
+    document.addEventListener('touchmove', _sortablePointerHandler, { passive: true });
+}
+
+function _stopSortableAutoScroll() {
+    _sortableDragActive = false;
+    _scrollDir = 0;
+    if (_sortablePointerHandler) {
+        document.removeEventListener('pointermove', _sortablePointerHandler);
+        document.removeEventListener('touchmove', _sortablePointerHandler);
+        _sortablePointerHandler = null;
+    }
 }
 
 // Start the loop once
@@ -70,7 +151,7 @@ function toggleEditMode() {
     editBtn.classList.toggle('active', window._editMode);
     editBtn.textContent = window._editMode ? '✏️ Editing On' : '✏️ Edit Photos';
     document.getElementById('edit-mode-hint').textContent = window._editMode
-        ? 'Drag photos between zones · Reorder subcontract photos/headings · Ctrl+Z to undo'
+        ? 'Drag photos between zones · Shift+click to multi-select · Ctrl+Z to undo'
         : 'Enable to rearrange photos';
     if (window._editMode) {
         initAllSortables();
@@ -238,6 +319,84 @@ function _usesSortableDrag(card) {
     return false;
 }
 
+function _sortableGridForCard(card) {
+    if (!card) return null;
+    const bucketGrid = card.closest('.manual-arrange-bucket .photo-grid');
+    if (bucketGrid) return bucketGrid;
+    return card.closest('.subcontract-grid');
+}
+
+function _orderedSelectedCardsInGrid(grid) {
+    if (!grid) return [];
+    return [...grid.children].filter(el =>
+        el.classList.contains('photo-card') && _selectedPhotos.has(el)
+    );
+}
+
+function _orderedSelectedCardsForMultiDrag(evt) {
+    const dragged = evt.item;
+    if (!dragged.classList.contains('photo-card')) return null;
+    if (!_selectedPhotos.has(dragged) || _selectedPhotos.size < 2) return null;
+
+    const pane = evt.from.closest('.tab-pane');
+    if (pane && _manualArrangeMeasureIdForPane(pane)) {
+        const cards = [...pane.querySelectorAll('.photo-card')].filter(c => _selectedPhotos.has(c));
+        return cards.length > 1 ? cards : null;
+    }
+
+    const ordered = _orderedSelectedCardsInGrid(evt.from);
+    return ordered.length > 1 ? ordered : null;
+}
+
+let _multiDragPending = null;
+
+function _clearMultiDragVisuals() {
+    document.querySelectorAll('.photo-card.multi-drag-source').forEach(card => {
+        card.classList.remove('multi-drag-source');
+    });
+}
+
+function _applyMultiDragReposition(evt) {
+    if (!_multiDragPending) return;
+    const { cards } = _multiDragPending;
+    const toGrid = evt.to;
+    const dragged = evt.item;
+
+    const preChildren = [...toGrid.children];
+    const dropIndex = preChildren.indexOf(dragged);
+    let insertAt = 0;
+    for (let i = 0; i < dropIndex; i++) {
+        if (!cards.includes(preChildren[i])) insertAt++;
+    }
+
+    cards.forEach(card => card.remove());
+
+    const ref = toGrid.children[insertAt] || null;
+    if (ref) {
+        cards.forEach(card => toGrid.insertBefore(card, ref));
+    } else {
+        cards.forEach(card => toGrid.appendChild(card));
+    }
+    _multiDragPending = null;
+}
+
+function _sortableDragStart(evt) {
+    _startSortableAutoScroll();
+    if (!evt.item.classList.contains('photo-card')) return;
+    const cards = _orderedSelectedCardsForMultiDrag(evt);
+    if (!cards) return;
+    _multiDragPending = { cards, from: evt.from };
+    cards.forEach(card => {
+        if (card !== evt.item) card.classList.add('multi-drag-source');
+    });
+}
+
+function _sortableDragEnd(evt) {
+    _applyMultiDragReposition(evt);
+    _clearMultiDragVisuals();
+    _stopSortableAutoScroll();
+}
+
 function _setCardDraggable(card) {
     card.setAttribute('draggable', _usesSortableDrag(card) ? 'false' : 'true');
 }
@@ -260,10 +419,13 @@ function initSubcontractSortables() {
             ghostClass: 'sortable-ghost',
             chosenClass: 'sortable-chosen',
             disabled: !window._editMode,
-            onStart() {
+            onMove: _sortableOnMove,
+            onStart(evt) {
                 _sortableUndoSnapshot = { type: 'sortable', grid, order: [...grid.children] };
+                _sortableDragStart(evt);
             },
-            onEnd() {
+            onEnd(evt) {
+                _sortableDragEnd(evt);
                 const changed = _sortableUndoSnapshot
                     && _sortableUndoSnapshot.order.some((el, i) => grid.children[i] !== el);
                 if (changed) {
@@ -308,11 +470,14 @@ function initManualArrangeSortables() {
             ghostClass: 'sortable-ghost',
             chosenClass: 'sortable-chosen',
             disabled: !window._editMode,
+            onMove: _sortableOnMove,
             onStart(evt) {
                 dragFromGrid = evt.from;
                 _manualArrangeUndoSnapshot = _snapshotManualArrangeGrids(pane);
+                _sortableDragStart(evt);
             },
             onEnd(evt) {
+                _sortableDragEnd(evt);
                 const changed = _manualArrangeUndoSnapshot
                     && _manualArrangeGridsChanged(_manualArrangeUndoSnapshot);
                 if (changed) {
@@ -353,6 +518,9 @@ function destroySubcontractSortables() {
     _sortableInstances.clear();
     _sortableUndoSnapshot = null;
     _manualArrangeUndoSnapshot = null;
+    _multiDragPending = null;
+    _clearMultiDragVisuals();
+    _stopSortableAutoScroll();
 }
 
 // Ensure every photo-grid has a drop-empty-hint sibling
@@ -515,6 +683,7 @@ document.addEventListener('drop', function(e) {
 document.querySelectorAll('.photo-card').forEach(_setCardDraggable);
 
 // ── Subcontracted: heading injection + photo selection ───────
+const _selectedPhotos = new Set();
 let _selectedPhoto = null;
 let _selectedHeading = null;
 const injectHeadingBtn = document.getElementById('inject-heading-btn');
@@ -542,7 +711,28 @@ function clearHeadingSelection() {
 
 function clearPhotoSelection() {
     document.querySelectorAll('.photo-card.selected').forEach(c => c.classList.remove('selected'));
+    _selectedPhotos.clear();
     _selectedPhoto = null;
+}
+
+function selectPhotoCard(card, additive) {
+    if (!card) return;
+    if (additive) {
+        if (_selectedPhotos.has(card)) {
+            _selectedPhotos.delete(card);
+            card.classList.remove('selected');
+            _selectedPhoto = _selectedPhotos.size ? [..._selectedPhotos].slice(-1)[0] : null;
+        } else {
+            _selectedPhotos.add(card);
+            card.classList.add('selected');
+            _selectedPhoto = card;
+        }
+        return;
+    }
+    clearPhotoSelection();
+    _selectedPhotos.add(card);
+    card.classList.add('selected');
+    _selectedPhoto = card;
 }
 
 function removeHeading(heading) {
@@ -640,15 +830,16 @@ document.addEventListener('click', function(e) {
     }
 
     const card = e.target.closest('.photo-card');
-    const grid = e.target.closest('.subcontract-grid');
-    if (card && grid && window._editMode) {
+    const sortableGrid = card ? _sortableGridForCard(card) : null;
+    if (card && sortableGrid && window._editMode) {
+        e.preventDefault();
+        e.stopPropagation();
         clearHeadingSelection();
-        clearPhotoSelection();
-        card.classList.add('selected');
-        _selectedPhoto = card;
+        selectPhotoCard(card, e.shiftKey);
         return;
     }
 
+    const grid = e.target.closest('.subcontract-grid');
     const heading = e.target.closest('.subcontract-heading');
     if (heading && grid && window._editMode) {
         clearPhotoSelection();

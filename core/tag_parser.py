@@ -19,6 +19,18 @@ import re
 import core.config as config
 
 
+def title_case_word(word):
+    if not word:
+        return word
+    if word[0].isdigit():
+        return word.lower()
+    return word.capitalize()
+
+
+def title_case_tag_text(text):
+    return " ".join(title_case_word(w) for w in str(text).split())
+
+
 def parse_bldg_unit(tags_clean):
     """
     Extract (bldg, unit) from a photo's cleaned (uppercased, stripped)
@@ -162,5 +174,5 @@ def get_special_room_match(tags_clean):
         tag_up = tag.upper()
         for i, room in enumerate(config.SPECIAL_ROOMS_NORMALIZED):
             if room == tag_up or room in tag_up:
-                return config.SPECIAL_ROOMS_INPUT[i].title()
+                return title_case_tag_text(config.SPECIAL_ROOMS_INPUT[i])
     return None

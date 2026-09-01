@@ -553,6 +553,118 @@ function renderCoverEditor() {
 }
  
 // ── Photo selection mode ─────────────────────────────────────
+function _cardsInElement(el) {
+    return el ? [...el.querySelectorAll('.photo-card')] : [];
+}
+
+function _cardsUnderSubcontractHeading(heading) {
+    const grid = heading.closest('.subcontract-grid');
+    if (!grid) return [];
+    const cards = [];
+    let sibling = heading.nextElementSibling;
+    while (sibling) {
+        if (sibling.classList.contains('subcontract-heading')) break;
+        if (sibling.classList.contains('photo-card')) cards.push(sibling);
+        sibling = sibling.nextElementSibling;
+    }
+    return cards;
+}
+
+function _setCardsHidden(cards, hidden) {
+    cards.forEach(card => {
+        const url = photoCardUrl(card);
+        if (!url) return;
+        const cb = card.querySelector('.pdf-hide-checkbox');
+        if (hidden) {
+            _tempHiddenUrls.add(url);
+            card.classList.add('pdf-hidden-selected');
+        } else {
+            _tempHiddenUrls.delete(url);
+            card.classList.remove('pdf-hidden-selected');
+        }
+        if (cb) cb.checked = hidden;
+    });
+    refreshSelectModeCount();
+}
+
+function _syncGroupCheckbox(groupCb, cards) {
+    if (!groupCb || !cards.length) {
+        if (groupCb) {
+            groupCb.checked = false;
+            groupCb.indeterminate = false;
+        }
+        return;
+    }
+    const hiddenCount = cards.filter(card => {
+        const url = photoCardUrl(card);
+        return url && _tempHiddenUrls.has(url);
+    }).length;
+    groupCb.checked = hiddenCount === cards.length;
+    groupCb.indeterminate = hiddenCount > 0 && hiddenCount < cards.length;
+}
+
+function _syncGroupCheckboxForCard(card) {
+    const phaseSection = card.closest('.phase-section');
+    if (phaseSection) {
+        const groupCb = phaseSection.querySelector('.pdf-hide-group-checkbox');
+        _syncGroupCheckbox(groupCb, _cardsInElement(phaseSection));
+    }
+    const grid = card.closest('.subcontract-grid');
+    if (grid) {
+        let heading = card.previousElementSibling;
+        while (heading && !heading.classList.contains('subcontract-heading')) {
+            heading = heading.previousElementSibling;
+        }
+        if (heading) {
+            const groupCb = heading.querySelector('.pdf-hide-group-checkbox');
+            _syncGroupCheckbox(groupCb, _cardsUnderSubcontractHeading(heading));
+        }
+    }
+}
+
+function _injectGroupHideCheckboxes() {
+    document.querySelectorAll('.phase-section').forEach(section => {
+        const header = section.querySelector('.phase-header');
+        if (!header || header.querySelector('.pdf-hide-group-checkbox')) return;
+        const cards = _cardsInElement(section);
+        if (!cards.length) return;
+
+        const groupCb = document.createElement('input');
+        groupCb.type = 'checkbox';
+        groupCb.className = 'pdf-hide-group-checkbox';
+        groupCb.title = 'Select all photos in this section';
+        groupCb.addEventListener('change', function(e) {
+            e.stopPropagation();
+            _setCardsHidden(cards, this.checked);
+            _syncGroupCheckbox(groupCb, cards);
+        });
+        header.insertBefore(groupCb, header.firstChild);
+        _syncGroupCheckbox(groupCb, cards);
+    });
+
+    document.querySelectorAll('.subcontract-heading').forEach(heading => {
+        if (heading.querySelector('.pdf-hide-group-checkbox')) return;
+        const cards = _cardsUnderSubcontractHeading(heading);
+        if (!cards.length) return;
+
+        const groupCb = document.createElement('input');
+        groupCb.type = 'checkbox';
+        groupCb.className = 'pdf-hide-group-checkbox';
+        groupCb.title = 'Select all photos under this heading';
+        groupCb.addEventListener('change', function(e) {
+            e.stopPropagation();
+            _setCardsHidden(cards, this.checked);
+            _syncGroupCheckbox(groupCb, cards);
+        });
+        heading.insertBefore(groupCb, heading.firstChild);
+        _syncGroupCheckbox(groupCb, cards);
+    });
+}
+
+function _removeGroupHideCheckboxes() {
+    document.querySelectorAll('.pdf-hide-group-checkbox').forEach(cb => cb.remove());
+}
+
 function togglePhotoSelectMode() {
     if (!_photoSelectMode) {
         startPhotoSelectMode();
@@ -586,6 +698,7 @@ function startPhotoSelectMode() {
                     _tempHiddenUrls.delete(url);
                     card.classList.remove('pdf-hidden-selected');
                 }
+                _syncGroupCheckboxForCard(card);
                 refreshSelectModeCount();
             });
             card.appendChild(cb);
@@ -603,7 +716,9 @@ function startPhotoSelectMode() {
         };
         card.addEventListener('click', card._pdfClickHandler);
     });
- 
+
+    _injectGroupHideCheckboxes();
+
     document.body.classList.add('pdf-select-mode');
     document.getElementById('pdfHidePhotosBtn').textContent = '💾 Save Selections';
     document.getElementById('pdfHidePhotosBtn').classList.add('selecting');
@@ -622,7 +737,9 @@ function endPhotoSelectMode(save) {
             delete card._pdfClickHandler;
         }
     });
- 
+
+    _removeGroupHideCheckboxes();
+
     document.body.classList.remove('pdf-select-mode');
     document.getElementById('pdfHidePhotosBtn').textContent = '🙈 Select Photos to Hide';
     document.getElementById('pdfHidePhotosBtn').classList.remove('selecting');

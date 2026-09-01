@@ -253,6 +253,16 @@ def _measure_heading_size(measure_id, pdf_options):
     return "normal"
 
 
+def _standalone_measure_heading_block(measure_hdr_pending, after_cover=False):
+    """Return top-level flowables for full-page measure headings."""
+    if not measure_hdr_pending:
+        return []
+    block = list(measure_hdr_pending)
+    if after_cover and block and isinstance(block[0], PageBreak):
+        block = block[1:]
+    return block
+
+
 def _active_measure_id(pdf_options):
     mid = pdf_options.get("_current_measure_id")
     if mid:
@@ -602,7 +612,7 @@ def _merge_partial_pdfs(partial_paths, save_path):
         writer.write(out_f)
 
 
-def _build_measure_elements(m_entry, pdf_options, is_linear, hide_empty, hidden_urls, sub_unit_label):
+def _build_measure_elements(m_entry, pdf_options, is_linear, hide_empty, hidden_urls, sub_unit_label, after_cover=False):
     """Build platypus elements for one measure in a multi-measure report."""
     elements = []
     m_id        = m_entry.get("measure_id") or ""
@@ -618,16 +628,27 @@ def _build_measure_elements(m_entry, pdf_options, is_linear, hide_empty, hidden_
     m_is_linear = is_linear or _measure_forces_linear(m_sort_mode)
     m_section_fn = build_photo_section_linear if m_is_linear else build_photo_section
 
-    measure_hdr_pending = build_measure_heading(
-        m_name, _measure_heading_size(m_id, pdf_options),
-    )
+    heading_size = _measure_heading_size(m_id, pdf_options)
+    measure_hdr_pending = build_measure_heading(m_name, heading_size)
+    heading_is_full_page = heading_size == "full_page"
     measure_hdr_used = [False]
 
+    if heading_is_full_page and measure_hdr_pending:
+        elements.extend(_standalone_measure_heading_block(measure_hdr_pending, after_cover=after_cover))
+        measure_hdr_used[0] = True
+
     def _with_measure_hdr(headers):
+        if heading_is_full_page:
+            return list(headers)
         if not measure_hdr_used[0] and measure_hdr_pending:
             measure_hdr_used[0] = True
             return measure_hdr_pending + list(headers)
         return list(headers)
+
+    def _initial_measure_headers():
+        if heading_is_full_page or measure_hdr_used[0]:
+            return None
+        return measure_hdr_pending
 
     def _section_has_photos(phases_dict):
         return any(
@@ -733,7 +754,7 @@ def _build_measure_elements(m_entry, pdf_options, is_linear, hide_empty, hidden_
         for location in m_data.get("locations", []):
             _render_lighting_location(
                 location, pdf_options, elements,
-                initial_headers=measure_hdr_pending if not measure_hdr_used[0] else None,
+                initial_headers=_initial_measure_headers(),
             )
             if not measure_hdr_used[0]:
                 measure_hdr_used[0] = True
@@ -745,21 +766,21 @@ def _build_measure_elements(m_entry, pdf_options, is_linear, hide_empty, hidden_
     elif m_sort_mode == SUBCONTRACTED_SORT_KEY:
         _render_subcontracted_items(
             m_data.get("items", []), pdf_options, elements, m_is_linear, m_section_fn,
-            initial_headers=measure_hdr_pending if not measure_hdr_used[0] else None,
+            initial_headers=_initial_measure_headers(),
         )
         measure_hdr_used[0] = True
 
     elif m_sort_mode == HEAT_PUMP_SORT_KEY:
         _render_heat_pump_buckets(
             m_data, pdf_options, elements, m_is_linear, m_section_fn,
-            initial_headers=measure_hdr_pending if not measure_hdr_used[0] else None,
+            initial_headers=_initial_measure_headers(),
         )
         measure_hdr_used[0] = True
 
     elif m_sort_mode == MANUAL_ARRANGE_SORT_KEY:
         _render_manual_arrange_measure(
             m_data, pdf_options, elements, m_is_linear, m_section_fn,
-            initial_headers=measure_hdr_pending if not measure_hdr_used[0] else None,
+            initial_headers=_initial_measure_headers(),
         )
         measure_hdr_used[0] = True
 
@@ -775,7 +796,7 @@ def _build_measure_elements(m_entry, pdf_options, is_linear, hide_empty, hidden_
             )
             elements += m_section_fn(phases, _with_measure_hdr(unit_hdr), pdf_options)
 
-    if not measure_hdr_used[0] and measure_hdr_pending and not hide_empty:
+    if not measure_hdr_used[0] and measure_hdr_pending and not hide_empty and not heading_is_full_page:
         elements.append(KeepTogether(list(measure_hdr_pending) + [
             Paragraph("No photos in this section.", style_no_photo),
             Spacer(1, 6),
@@ -894,6 +915,7 @@ def generate_pdf_report(context, pdf_options=None, progress_callback=None):
                     build_cover_page(context, pdf_options, is_linear, base_dir, elements)
                 elements.extend(_build_measure_elements(
                     m_entry, pdf_options, is_linear, hide_empty, hidden_urls, sub_unit_label,
+                    after_cover=(idx == 0),
                 ))
 
                 mid = _safe_partial_name(m_entry.get("measure_id"), f"measure_{idx}")

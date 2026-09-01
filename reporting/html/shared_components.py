@@ -77,7 +77,7 @@ def make_photo_card_html(photo_data, idx=None, zone_id=None):
     html += (
         f'<div class="photo-img-wrap">'
         f'<img src="{url}" loading="lazy" style="{img_style}"'
-        f' onclick="openLightboxFromCard(this.closest(\'.photo-card\'))">'
+        f' onclick="openLightboxFromCard(event, this.closest(\'.photo-card\'))">'
         f'</div>'
     )
     html += '<div class="photo-metadata">'

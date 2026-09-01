@@ -244,6 +244,14 @@ body.pdf-select-mode .photo-card:hover::after { background: rgba(46,134,222,0.08
     cursor: pointer; z-index: 20; border-radius: 4px;
 }
 body.pdf-select-mode .pdf-hide-checkbox { display: block; }
+.pdf-hide-group-checkbox {
+    display: none; width: 20px; height: 20px; accent-color: #e74c3c;
+    cursor: pointer; flex-shrink: 0; border-radius: 4px;
+}
+body.pdf-select-mode .pdf-hide-group-checkbox { display: inline-block; }
+body.pdf-select-mode .subcontract-heading .pdf-hide-group-checkbox {
+    margin-right: 8px; align-self: center;
+}
 body.pdf-select-mode .photo-card.pdf-hidden-selected img { opacity: 0.38; filter: grayscale(60%); }
 body.pdf-select-mode .photo-card.pdf-hidden-selected::after {
     background: rgba(231,76,60,0.12);
