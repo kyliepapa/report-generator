@@ -103,6 +103,10 @@ def run_heat_pump(photos, **kwargs):
         auto_assign_lone_serial_to_before=kwargs.get(
             "auto_assign_lone_serial_to_before", False
         ),
+        intuitive_fixture_sort=kwargs.get("intuitive_fixture_sort", True),
+        multi_unit=kwargs.get("multi_unit", False),
+        lone_number_mode=kwargs.get("lone_number_mode", "none"),
+        locations=kwargs.get("locations"),
     )
 
 

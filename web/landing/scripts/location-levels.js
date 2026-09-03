@@ -53,7 +53,7 @@ function _createLevelRow(measureId, levelNum) {
                 <input class="tag-input" id="${prefix}Input" placeholder="Type a name, press Enter" autocomplete="off" spellcheck="false" />
             </div>
         </div>
-        ${_makeLevelSwitchHtml(numericGroup, 'Includes numbered locations at this level')}`;
+        ${_makeLevelSwitchHtml(numericGroup, 'Includes tags that are lone numbers at this level')}`;
 
     const builder = row.querySelector('.tag-builder');
     if (builder && typeof window.initTagBuilder === 'function') {

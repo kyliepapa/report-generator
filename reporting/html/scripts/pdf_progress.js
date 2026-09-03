@@ -97,7 +97,10 @@ function _headingTypesForMeasure(tabId, sortMode) {
     }
     if (shape === 'unit_phase') return [{ key: 'unit', label: 'Unit' }];
     if (shape === 'heat_pump_phase_serial_buckets') {
-        return [{ key: 'bucket', label: 'Serial Bucket' }];
+        return [
+            { key: 'location', label: 'Location' },
+            { key: 'bucket', label: 'Serial Bucket' },
+        ];
     }
     if (shape === 'subcontracted_sequence') {
         return [{ key: 'section', label: 'Section Headings' }];

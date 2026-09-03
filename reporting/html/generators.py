@@ -832,16 +832,8 @@ def _heat_pump_bucket_section(bucket, zone_prefix):
     return html
 
 
-def _render_heat_pump(structure, special_rooms_structure=None, zone_prefix=""):
-    buckets = structure.get("buckets", []) if isinstance(structure, dict) else []
-    untagged = structure.get("untagged", []) if isinstance(structure, dict) else []
-    photo_count = sum(len(b.get("photos", [])) for b in buckets) + len(untagged)
-
-    html = f"""<div class="summary">
-        <div class="summary-item"><span class="number">{photo_count}</span><div class="label">Photos</div></div>
-    </div>
-    <div class="content">"""
-
+def _render_heat_pump_buckets_content(buckets, untagged, zone_prefix):
+    html = ""
     for bucket in buckets:
         html += _heat_pump_bucket_section(bucket, zone_prefix)
 
@@ -852,7 +844,62 @@ def _render_heat_pump(structure, special_rooms_structure=None, zone_prefix=""):
         html += '<div class="phase-header"><h3 class="phase-title"><span class="phase-badge untagged">Untagged</span></h3>'
         html += f'<span class="phase-count">{len(untagged)} photos</span></div>'
         html += f'<div class="photo-grid" data-zone="{zid}">{cards}</div></div>'
+    return html
 
+
+def _count_heat_pump_photos(structure):
+    if structure.get("locations"):
+        total = len(structure.get("untagged", []))
+        for loc in structure["locations"]:
+            total += sum(len(b.get("photos", [])) for b in loc.get("buckets", []))
+            total += len(loc.get("untagged", []))
+        return total
+    buckets = structure.get("buckets", [])
+    return sum(len(b.get("photos", [])) for b in buckets) + len(structure.get("untagged", []))
+
+
+def _render_heat_pump(structure, special_rooms_structure=None, zone_prefix=""):
+    if not isinstance(structure, dict):
+        structure = {}
+
+    locations = structure.get("locations", [])
+    if locations:
+        photo_count = _count_heat_pump_photos(structure)
+        html = f"""<div class="summary">
+        <div class="summary-item"><span class="number">{len(locations)}</span><div class="label">Locations</div></div>
+        <div class="summary-item"><span class="number">{photo_count}</span><div class="label">Photos</div></div>
+    </div>
+    <div class="content">"""
+        for location in locations:
+            loc_name = location.get("name", "")
+            loc_prefix = _zone_id(zone_prefix, "loc", loc_name) if zone_prefix else _zone_id("loc", loc_name)
+            html += f'<div class="building-section"><h2 class="building-title">{loc_name}</h2>'
+            html += _render_heat_pump_buckets_content(
+                location.get("buckets", []),
+                location.get("untagged", []),
+                loc_prefix,
+            )
+            html += '</div>'
+        top_untagged = structure.get("untagged", [])
+        if top_untagged:
+            zid = _zone_id(zone_prefix, "untagged") if zone_prefix else _zone_id("untagged")
+            cards = ''.join(make_photo_card_html(_heat_pump_photo_dict(p)) for p in top_untagged)
+            html += '<div class="phase-section">'
+            html += '<div class="phase-header"><h3 class="phase-title"><span class="phase-badge untagged">Untagged</span></h3>'
+            html += f'<span class="phase-count">{len(top_untagged)} photos</span></div>'
+            html += f'<div class="photo-grid" data-zone="{zid}">{cards}</div></div>'
+        html += '</div>'
+        return html
+
+    buckets = structure.get("buckets", [])
+    untagged = structure.get("untagged", [])
+    photo_count = _count_heat_pump_photos(structure)
+
+    html = f"""<div class="summary">
+        <div class="summary-item"><span class="number">{photo_count}</span><div class="label">Photos</div></div>
+    </div>
+    <div class="content">"""
+    html += _render_heat_pump_buckets_content(buckets, untagged, zone_prefix)
     html += '</div>'
     return html
 
@@ -964,7 +1011,10 @@ def build_measure_heading_schema(measures):
         elif shape == "unit_phase":
             headings = [{"key": "unit", "label": "Unit"}]
         elif shape == HEAT_PUMP_SHAPE:
-            headings = [{"key": "bucket", "label": "Serial Bucket"}]
+            headings = [
+                {"key": "location", "label": "Location"},
+                {"key": "bucket", "label": "Serial Bucket"},
+            ]
         elif shape == SUBCONTRACTED_SHAPE:
             headings = [{"key": "section", "label": "Section Headings"}]
         elif shape == MANUAL_ARRANGE_SHAPE:

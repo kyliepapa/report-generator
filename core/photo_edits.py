@@ -335,11 +335,27 @@ def apply_heat_pump_photo_edits(structured, photo_edits, measure_id=None):
         if url:
             url_to_photo[url] = p
 
+    def _collect_location(loc):
+        for bucket in loc.get("buckets", []):
+            for p in bucket.get("photos", []):
+                _collect_p(p)
+        for p in loc.get("untagged", []):
+            _collect_p(p)
+
+    for loc in structured.get("locations", []):
+        _collect_location(loc)
     for bucket in structured.get("buckets", []):
         for p in bucket.get("photos", []):
             _collect_p(p)
     for p in structured.get("untagged", []):
         _collect_p(p)
+
+    def _match_name(node_list, name):
+        name_clean = name.replace("_", " ").lower()
+        for node in node_list:
+            if isinstance(node, dict) and node.get("name", "").replace("_", " ").lower() == name_clean:
+                return node
+        return None
 
     bucket_by_key = {b.get("key"): b for b in structured.get("buckets", [])}
 
@@ -350,9 +366,9 @@ def apply_heat_pump_photo_edits(structured, photo_edits, measure_id=None):
         if measure_id is not None:
             if parts[0].lower() == str(measure_id).lower():
                 parts = parts[1:]
-            elif parts[0] not in ("bucket", "untagged"):
+            elif parts[0] not in ("bucket", "untagged", "loc"):
                 continue
-        elif parts and parts[0] not in ("bucket", "untagged"):
+        elif parts and parts[0] not in ("bucket", "untagged", "loc"):
             continue
 
         if not parts:
@@ -360,6 +376,23 @@ def apply_heat_pump_photo_edits(structured, photo_edits, measure_id=None):
 
         if parts[0] == "untagged":
             structured["untagged"] = ordered_photos
+            continue
+
+        if parts[0] == "loc" and len(parts) > 1:
+            loc = _match_name(structured.get("locations", []), parts[1])
+            if loc is None:
+                continue
+            sub_parts = parts[2:]
+            if not sub_parts:
+                continue
+            if sub_parts[0] == "untagged":
+                loc["untagged"] = ordered_photos
+                continue
+            if sub_parts[0] == "bucket" and len(sub_parts) > 1:
+                loc_buckets = {b.get("key"): b for b in loc.get("buckets", [])}
+                bucket = loc_buckets.get(sub_parts[1])
+                if bucket is not None:
+                    bucket["photos"] = ordered_photos
             continue
 
         if parts[0] == "bucket" and len(parts) > 1:

@@ -57,6 +57,7 @@
         }
         .sidebar.wide .brand,
         .sidebar.wide .util-btn-row,
+        .sidebar.wide .mode-toggle-row,
         .sidebar.wide .dev-btn-wrap {
             flex-shrink: 0;
         }
@@ -522,9 +523,65 @@
             padding-top: 12px;
             border-top: 1px dashed var(--border);
         }
+
+        /* ── Basic Mode ── */
+        body.basic-mode .basic-mode-hidden-field {
+            display: none !important;
+        }
+        .mode-toggle-row {
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            padding: 8px 16px 4px;
+            border-top: 1px solid var(--border);
+        }
+        .mode-toggle-row .field-label {
+            font-size: 12px;
+            color: var(--muted);
+            margin: 0;
+        }
+        .see-more-drawer {
+            margin: 8px 0 4px;
+        }
+        .basic-mode-drawer-anchor {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px dashed var(--border);
+        }
+        .see-more-drawer-summary {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            padding: 8px 0;
+            border: none;
+            background: none;
+            font-size: 12.5px;
+            font-weight: 500;
+            color: var(--muted);
+            cursor: pointer;
+            text-align: left;
+            transition: color 0.15s;
+        }
+        .see-more-drawer-summary:hover {
+            color: var(--text);
+        }
+        .see-more-drawer-summary::before {
+            content: "▸";
+            display: inline-block;
+            margin-right: 6px;
+            transition: transform 0.15s;
+        }
+        .see-more-drawer.expanded .see-more-drawer-summary::before {
+            transform: rotate(90deg);
+        }
+        .see-more-drawer-content {
+            padding-top: 4px;
+        }
     </style>
 </head>
-<body>
+<body class="basic-mode">
 
 <div class="app-shell">
 
@@ -612,6 +669,13 @@
             <button class="util-btn" id="changelogBtn">
                 <span class="util-icon">📋</span> Changelog
             </button>
+        </div>
+        <div class="mode-toggle-row">
+            <label class="field-label" for="basicModeToggle">Basic Mode</label>
+            <label class="switch">
+                <input type="checkbox" id="basicModeToggle" class="switch-input" checked />
+                <span class="switch-slider"></span>
+            </label>
         </div>
         <div class="dev-btn-wrap">
             <button class="dev-btn" id="devBtn">dev</button>
@@ -875,12 +939,14 @@
 <script src="scripts/constants/faq-data.js"></script>
 <script src="scripts/constants/carousel-data.js"></script>
 <script src="scripts/constants/dev-config.js"></script>
+<script src="scripts/constants/basic-mode-presets.js"></script>
 <script src="scripts/overlay-core.js"></script>
 <script src="scripts/tag-builder.js"></script>
 <script src="scripts/form-state.js"></script>
 <script src="scripts/project-pairs.js"></script>
 <script src="scripts/location-levels.js"></script>
 <script src="scripts/tab-manager.js"></script>
+<script src="scripts/basic-mode.js"></script>
 <script src="scripts/sidebar-resize.js"></script>
 <script src="scripts/terminal.js"></script>
 <script src="scripts/generate-report.js"></script>

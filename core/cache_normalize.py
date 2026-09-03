@@ -142,9 +142,41 @@ def _normalize_subcontracted_structure(structure):
     return {"items": items}
 
 
+def _normalize_heat_pump_location(loc):
+    buckets = []
+    for bucket in loc.get("buckets", []):
+        buckets.append({
+            **{k: v for k, v in bucket.items() if k != "photos"},
+            "photos": [
+                _normalize_photo(p, _heat_pump_photo_dict)
+                for p in bucket.get("photos", [])
+            ],
+        })
+    return {
+        "name": loc.get("name", ""),
+        "buckets": buckets,
+        "untagged": [
+            _normalize_photo(p, _heat_pump_photo_dict)
+            for p in loc.get("untagged", [])
+        ],
+        "fixture_order": loc.get("fixture_order", []),
+    }
+
+
 def _normalize_heat_pump_structure(structure):
     if not isinstance(structure, dict):
         return structure or {}
+    if structure.get("locations"):
+        return {
+            "locations": [
+                _normalize_heat_pump_location(loc)
+                for loc in structure.get("locations", [])
+            ],
+            "untagged": [
+                _normalize_photo(p, _heat_pump_photo_dict)
+                for p in structure.get("untagged", [])
+            ],
+        }
     buckets = []
     for bucket in structure.get("buckets", []):
         buckets.append({

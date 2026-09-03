@@ -253,17 +253,24 @@ def _configure_and_sort_measure(measure_type, measure_payload, measure_photos, j
         return sort_output
 
     elif measure_type == "heat_pump":
+        intuitive_fixture_sort = bool(measure_payload.get("intuitive_fixture_sort", True))
+        fixtures = [] if intuitive_fixture_sort else _to_list(measure_payload.get("fixtures"))
+        allow_competing = False if intuitive_fixture_sort else bool(
+            measure_payload.get("allow_competing_fixture_tags")
+        )
         sort_output = run_sort(
             "heat_pump",
             measure_photos,
-            fixtures=_to_list(measure_payload.get("fixtures")),
+            fixtures=fixtures,
             serial_tag=str(measure_payload.get("serial_tag", "")),
-            allow_competing_fixture_tags=bool(
-                measure_payload.get("allow_competing_fixture_tags")
-            ),
+            allow_competing_fixture_tags=allow_competing,
             auto_assign_lone_serial_to_before=bool(
                 measure_payload.get("auto_assign_lone_serial_to_before")
             ),
+            intuitive_fixture_sort=intuitive_fixture_sort,
+            multi_unit=bool(measure_payload.get("multi_unit")),
+            lone_number_mode=str(measure_payload.get("lone_number_mode", "none")),
+            locations=_to_list(measure_payload.get("locations")),
         )
 
         # # Scary Terminal Logs

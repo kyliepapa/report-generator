@@ -113,10 +113,21 @@ function lightingFieldsHtml(id) {
 function heatPumpFieldsHtml(id) {
     return `
         <div class="measure-fields" data-type="heat_pump" id="hp-${id}" style="display:none;">
-            ${makeTagBuilderHtml(`fixtures-${id}`, 'Fixtures <span class="optional">(optional)</span>', 'e.g. Gas Meter, Descaler, Expansion Tank. Photos without a fixture tag stay in their phase bucket.', 'Type a fixture, press Enter')}
-            ${makeSwitchHtml(`allowCompetingFixtures-${id}`, 'Allow Competing Fixture Tags', 'When enabled, photos tagged with multiple fixtures are assigned to the first matching fixture instead of Untagged.')}
+            ${makeToggleHtml(`hpMultiUnit-${id}`, 'Does this measure include a single unit/location or multiple?', ['Single', 'Multiple'])}
+            <div id="hpMultiUnitGroup-${id}" style="display:none;">
+                ${makeToggleHtml(`hpLoneNumber-${id}`, 'How many of the location/unit tags are just lone numbers?', ['None', 'Some', 'All'])}
+                <div id="hpLocationsGroup-${id}" style="display:none;">
+                    ${makeTagBuilderHtml(`hpLocations-${id}`, 'Locations/Units', 'e.g. Basement, Garage, Unit A. Type them in the order you\'d like them to appear in the report.', 'Type a location, press Enter')}
+                </div>
+            </div>
+            ${makeSwitchHtml(`intuitiveFixtureSort-${id}`, 'Intuitive Fixture Sort', 'Automatically sorts photos by fixture type within the BEFORE and AFTER buckets.', true)}
+            <div id="hpManualFixtureGroup-${id}" style="display:none;">
+                ${makeTagBuilderHtml(`fixtures-${id}`, 'Fixtures <span class="optional">(optional)</span>', 'e.g. Gas Meter, Descaler, Expansion Tank. Photos without a fixture tag stay in their phase bucket.', 'Type a fixture, press Enter')}
+                ${makeSwitchHtml(`allowCompetingFixtures-${id}`, 'Allow Competing Fixture Tags', 'When enabled, photos tagged with multiple fixtures are assigned to the first matching fixture instead of Untagged.')}
+            </div>
             ${makeTagBuilderHtml(`heatPumpSerialTags-${id}`, 'Serial tags <span class="optional">(optional)</span>', 'Lets the program know what the tag for model number photos looks like (usually SERIAL/PART NUMBER)', 'Type a tag, press Enter')}
             ${makeSwitchHtml(`autoAssignLoneSerial-${id}`, 'Auto-assign Lone S/PN Photos to Before', 'When enabled, photos tagged with the serial tag but no BEFORE or AFTER tag are placed in BEFORE — SERIAL NUMBERS.')}
+            <div class="basic-mode-drawer-anchor"></div>
         </div>`;
 }
 
@@ -145,6 +156,7 @@ function subcontractedFieldsHtml(id) {
                 ${makeFieldHeadingHtml('Measure Mark <span class="optional">(optional)</span>', 'Single letter after the hash when multiple subcontracted measures share the same hash.')}
                 <input class="field-input subcontract-mark" maxlength="1" placeholder="e.g. S" autocomplete="off" />
             </div>
+            <div class="basic-mode-drawer-anchor"></div>
         </div>`;
 }
 
@@ -157,6 +169,7 @@ function manualArrangeFieldsHtml(id) {
             ${makeSwitchHtml(`allowConflictingTags-${id}`, 'Allow Conflicting Tags to Self-Determine',
                 'When enabled, photos tagged with multiple bucket tags are assigned to the first matching bucket. When off, they go to the staging area.',
                 true)}
+            <div class="basic-mode-drawer-anchor"></div>
         </div>`;
 }
 
@@ -165,7 +178,7 @@ function manualArrangeFieldsHtml(id) {
 const measureTypeLabels = {
     aquamizer: 'Aquamizer',
     lighting: 'Lighting',
-    heat_pump: 'Heat Pump',
+    heat_pump: 'Water Heaters / Heat Pumps',
     subcontracted: 'Subcontracted',
     manual_arrange: 'Manual Arrange',
     water_meter: 'Water Meter',
@@ -198,7 +211,7 @@ function createMeasureTab() {
                 <option value="">Select a measure type…</option>
                 <option value="aquamizer">Aquamizer</option>
                 <option value="lighting">Lighting</option>
-                <option value="heat_pump">Single-Unit Heat Pump</option>
+                <option value="heat_pump">Water Heaters / Heat Pumps</option>
                 <option value="subcontracted">Subcontracted</option>
                 <option value="manual_arrange">Manual Arrange</option>
                 <option value="water_meter">Water Meter</option>
@@ -250,6 +263,7 @@ function createMeasureTab() {
     });
 
     activateTab(id);
+    if (typeof window.applyBasicModeUI === 'function') window.applyBasicModeUI(panelEl);
     return entry;
 }
 
@@ -257,6 +271,36 @@ function updateLightingNumericUI(id) {
     if (typeof window.updateLocationLevelsNumericUI === 'function') {
         window.updateLocationLevelsNumericUI(id);
     }
+}
+
+function updateHeatPumpFixtureUI(id) {
+    const group = document.getElementById(`hpManualFixtureGroup-${id}`);
+    if (!group) return;
+    const intuitiveOn = document.querySelector(
+        `button.toggle.active[data-group="intuitiveFixtureSort-${id}"]`
+    );
+    const isOn = intuitiveOn && intuitiveOn.dataset.value === 'Yes';
+    group.style.display = isOn ? 'none' : '';
+}
+
+function updateHeatPumpLocationUI(id) {
+    const multiGroup = document.getElementById(`hpMultiUnitGroup-${id}`);
+    const locGroup = document.getElementById(`hpLocationsGroup-${id}`);
+    if (!multiGroup) return;
+
+    const multiVal = document.querySelector(
+        `button.toggle.active[data-group="hpMultiUnit-${id}"]`
+    );
+    const isMultiple = multiVal && multiVal.dataset.value === 'Multiple';
+    multiGroup.style.display = isMultiple ? '' : 'none';
+
+    if (!isMultiple || !locGroup) return;
+
+    const loneVal = document.querySelector(
+        `button.toggle.active[data-group="hpLoneNumber-${id}"]`
+    );
+    const mode = loneVal ? loneVal.dataset.value : '';
+    locGroup.style.display = (mode === 'None' || mode === 'Some') ? '' : 'none';
 }
 
 function onMeasureTypeChange(id, type) {
@@ -278,9 +322,14 @@ function onMeasureTypeChange(id, type) {
     }
 
     if (type === 'lighting') updateLightingNumericUI(id);
+    if (type === 'heat_pump') {
+        updateHeatPumpFixtureUI(id);
+        updateHeatPumpLocationUI(id);
+    }
 
     updateMeasureTabLabel(entry);
     refreshProjectChecklists();
+    if (typeof window.applyBasicModeUI === 'function') window.applyBasicModeUI(panelEl);
 }
 
 function removeMeasureTab(id) {
@@ -323,7 +372,13 @@ document.addEventListener('change', (e) => {
     const value = input.checked ? 'Yes' : 'No';
     const btn = document.querySelector(`button.toggle[data-group="${group}"][data-value="${value}"]`);
     if (btn) btn.click();
+    if (group && group.startsWith('intuitiveFixtureSort-')) {
+        updateHeatPumpFixtureUI(group.replace('intuitiveFixtureSort-', ''));
+    }
 });
+
+window.updateHeatPumpLocationUI = updateHeatPumpLocationUI;
+window.updateHeatPumpFixtureUI = updateHeatPumpFixtureUI;
 
 // Start with one measure tab already present.
 createMeasureTab();

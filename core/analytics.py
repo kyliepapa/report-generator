@@ -102,6 +102,10 @@ def _measure_config_snapshot(measure_type: str, payload: dict) -> dict:
             "auto_assign_lone_serial_to_before": bool(
                 payload.get("auto_assign_lone_serial_to_before")
             ),
+            "intuitive_fixture_sort": bool(payload.get("intuitive_fixture_sort", True)),
+            "multi_unit": bool(payload.get("multi_unit")),
+            "lone_number_mode": str(payload.get("lone_number_mode") or "none"),
+            "locations": _to_list(payload.get("locations")),
         }
     if mtype == "subcontracted":
         return {

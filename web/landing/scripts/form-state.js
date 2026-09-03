@@ -17,4 +17,13 @@ document.addEventListener('click', (e) => {
     if (levelNumericMatch && typeof window.updateLocationLevelsNumericUI === 'function') {
         window.updateLocationLevelsNumericUI(levelNumericMatch[1]);
     }
+
+    const hpMultiMatch = group && group.match(/^hpMultiUnit-(m\d+)$/);
+    if (hpMultiMatch && typeof window.updateHeatPumpLocationUI === 'function') {
+        window.updateHeatPumpLocationUI(hpMultiMatch[1]);
+    }
+    const hpLoneMatch = group && group.match(/^hpLoneNumber-(m\d+)$/);
+    if (hpLoneMatch && typeof window.updateHeatPumpLocationUI === 'function') {
+        window.updateHeatPumpLocationUI(hpLoneMatch[1]);
+    }
 });

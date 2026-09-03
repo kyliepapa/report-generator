@@ -98,6 +98,20 @@ def _collect_buckets(structure, headings):
         _add_heading(headings, f"bucket:{label}", "bucket", label)
 
 
+def _collect_heat_pump_locations(structure, headings):
+    for location in structure.get("locations", []):
+        loc_name = location.get("name", "")
+        _add_heading(headings, f"loc:{loc_name}", "location", loc_name)
+        for bucket in location.get("buckets", []):
+            label = bucket.get("label", "")
+            _add_heading(
+                headings,
+                f"loc:{loc_name}:bucket:{label}",
+                "bucket",
+                label,
+            )
+
+
 def collect_measure_automatic_headings(measure):
     """Return [{ key, type, default_label }, ...] for one measure tab."""
     shape = measure.get("shape") or ""
@@ -158,7 +172,10 @@ def collect_measure_automatic_headings(measure):
         _collect_lighting(structure, headings)
 
     elif shape == HEAT_PUMP_SORT_KEY:
-        _collect_buckets(structure, headings)
+        if structure.get("locations"):
+            _collect_heat_pump_locations(structure, headings)
+        else:
+            _collect_buckets(structure, headings)
 
     elif shape == MANUAL_ARRANGE_SORT_KEY:
         _collect_buckets(structure, headings)

@@ -437,7 +437,7 @@ def _render_subcontracted_items(items, pdf_options, elements, is_linear, section
     flush_lonely_headers()
 
 
-def _render_heat_pump_buckets(m_data, pdf_options, elements, is_linear, section_fn, initial_headers=None):
+def _render_heat_pump_buckets(m_data, pdf_options, elements, is_linear, section_fn, initial_headers=None, location_name=None):
     hidden_urls = set(pdf_options.get("hidden_photos", []))
     pending_init = list(initial_headers or [])
     for bucket in m_data.get("buckets", []):
@@ -446,7 +446,10 @@ def _render_heat_pump_buckets(m_data, pdf_options, elements, is_linear, section_
         if not visible:
             continue
         bucket_label = bucket.get("label", "")
-        bucket_key = f"bucket:{bucket_label}"
+        if location_name:
+            bucket_key = f"loc:{location_name}:bucket:{bucket_label}"
+        else:
+            bucket_key = f"bucket:{bucket_label}"
         resolved_bucket = resolve_heading_label(bucket_key, bucket_label, pdf_options)
         bucket_hdr = _maybe_bldg_divider(resolved_bucket, pdf_options, key="bucket")
         hdr = pending_init + bucket_hdr
@@ -461,6 +464,36 @@ def _render_heat_pump_buckets(m_data, pdf_options, elements, is_linear, section_
     if visible_untagged:
         hdr = pending_init + bldg_divider("Untagged")
         pending_init = []
+        if is_linear:
+            elements.extend(build_flat_linear_section(visible_untagged, hdr, pdf_options))
+        else:
+            elements.extend(section_fn({"UNTAGGED": visible_untagged}, hdr, pdf_options))
+    elif pending_init and not pdf_options.get("hide_empty_fields", False):
+        elements.append(KeepTogether(list(pending_init) + [
+            Paragraph("No photos in this section.", style_no_photo),
+            Spacer(1, 6),
+        ]))
+
+
+def _render_heat_pump_locations(m_data, pdf_options, elements, is_linear, section_fn, initial_headers=None):
+    pending_init = list(initial_headers or [])
+    for location in m_data.get("locations", []):
+        loc_name = location.get("name", "")
+        loc_default = loc_name
+        loc_key = f"loc:{loc_name}"
+        resolved_loc = resolve_heading_label(loc_key, loc_default, pdf_options)
+        loc_hdr = _maybe_bldg_divider(resolved_loc, pdf_options, key="location")
+        hdr = pending_init + loc_hdr
+        pending_init = []
+        _render_heat_pump_buckets(
+            location, pdf_options, elements, is_linear, section_fn,
+            initial_headers=hdr, location_name=loc_name,
+        )
+    top_untagged = [_heat_pump_photo_dict(p) for p in m_data.get("untagged", [])]
+    hidden_urls = set(pdf_options.get("hidden_photos", []))
+    visible_untagged = [p for p in top_untagged if p.get("url") not in hidden_urls]
+    if visible_untagged:
+        hdr = pending_init + bldg_divider("Untagged")
         if is_linear:
             elements.extend(build_flat_linear_section(visible_untagged, hdr, pdf_options))
         else:
@@ -771,10 +804,16 @@ def _build_measure_elements(m_entry, pdf_options, is_linear, hide_empty, hidden_
         measure_hdr_used[0] = True
 
     elif m_sort_mode == HEAT_PUMP_SORT_KEY:
-        _render_heat_pump_buckets(
-            m_data, pdf_options, elements, m_is_linear, m_section_fn,
-            initial_headers=_initial_measure_headers(),
-        )
+        if m_data.get("locations"):
+            _render_heat_pump_locations(
+                m_data, pdf_options, elements, m_is_linear, m_section_fn,
+                initial_headers=_initial_measure_headers(),
+            )
+        else:
+            _render_heat_pump_buckets(
+                m_data, pdf_options, elements, m_is_linear, m_section_fn,
+                initial_headers=_initial_measure_headers(),
+            )
         measure_hdr_used[0] = True
 
     elif m_sort_mode == MANUAL_ARRANGE_SORT_KEY:
@@ -1075,7 +1114,10 @@ def generate_pdf_report(context, pdf_options=None, progress_callback=None):
         )
 
     elif sort_mode == HEAT_PUMP_SORT_KEY:
-        _render_heat_pump_buckets(data, pdf_options, elements, is_linear, section_fn)
+        if data.get("locations"):
+            _render_heat_pump_locations(data, pdf_options, elements, is_linear, section_fn)
+        else:
+            _render_heat_pump_buckets(data, pdf_options, elements, is_linear, section_fn)
 
     elif sort_mode == MANUAL_ARRANGE_SORT_KEY:
         _render_manual_arrange_measure(
