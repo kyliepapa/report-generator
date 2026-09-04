@@ -70,17 +70,17 @@ function _createOutlierSetRow(measureId) {
     return row;
 }
 
-function _rowsContainer(measureId) {
+function _outlierRowsContainer(measureId) {
     return document.getElementById(`outlierSetRows-${measureId}`);
 }
 
-function _addBtn(measureId) {
+function _outlierAddBtn(measureId) {
     return document.getElementById(`addOutlierSetBtn-${measureId}`);
 }
 
 function initOutlierSets(measureId) {
-    const container = _rowsContainer(measureId);
-    const addBtn = _addBtn(measureId);
+    const container = _outlierRowsContainer(measureId);
+    const addBtn = _outlierAddBtn(measureId);
     if (!container) return;
 
     if (container.children.length === 0) {
@@ -96,13 +96,13 @@ function initOutlierSets(measureId) {
 }
 
 function addOutlierSet(measureId) {
-    const container = _rowsContainer(measureId);
+    const container = _outlierRowsContainer(measureId);
     if (!container) return;
     container.appendChild(_createOutlierSetRow(measureId));
 }
 
 function refreshOutlierProjectSelects(measureId) {
-    const container = _rowsContainer(measureId);
+    const container = _outlierRowsContainer(measureId);
     if (!container) return;
     container.querySelectorAll('.outlier-project-select').forEach(_populateProjectSelect);
 }
@@ -114,7 +114,7 @@ function refreshAllOutlierProjectSelects() {
 }
 
 function getOutlierSets(measureId) {
-    const container = _rowsContainer(measureId);
+    const container = _outlierRowsContainer(measureId);
     if (!container) return [];
 
     return Array.from(container.querySelectorAll('.outlier-set-block')).map(row => {

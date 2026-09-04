@@ -257,6 +257,9 @@ function createMeasureTab() {
     // Init tag builders for static measure fields (not outliers — those init per row).
     panelEl.querySelectorAll('.measure-fields:not([data-type="outliers"]) .tag-builder')
         .forEach(b => window.initTagBuilder(b));
+    if (typeof window.initLocationLevels === 'function') {
+        window.initLocationLevels(id);
+    }
 
     const select = panelEl.querySelector('.measure-select');
     select.addEventListener('change', () => onMeasureTypeChange(id, select.value));

@@ -148,7 +148,7 @@ function updateLocationLevelsNumericUI(measureId) {
         const n = idx + 1;
         const optional = n > 1 ? ' <span class="optional">(optional)</span>' : '';
         if (n === 1 && level.numeric === 'Yes') {
-            label.innerHTML = 'Location Level 1 <span class="optional">(optional)</span>';
+            label.innerHTML = 'Locations <span class="optional">(optional)</span>';
         } else {
             label.innerHTML = _levelLabel(n);
         }

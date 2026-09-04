@@ -78,7 +78,7 @@ function _headingTypesForMeasure(tabId, sortMode) {
     const shape = sortMode || '';
     if (shape === 'location_sublocation_type_fixture_phase') {
         return [
-            { key: 'location_level_1', label: 'Location Level 1' },
+            { key: 'location_level_1', label: 'Locations' },
             { key: 'fixture_type', label: 'Fixture Type' },
         ];
     }

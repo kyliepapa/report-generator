@@ -23,3 +23,5 @@ V 3.1.1 - Official deployment. Patched gaps in beta modes, added multi-select in
 V 3.2.0 - Refactored Water Heater/Heat Pump measure, added Intuitive Sort & Multi-Unit Handling. Implemented Basic Mode UI & fixed various bugs.
 
 V 3.2.1 - Added the Outliers measure & fixed package-loading bug.
+
+V 3.2.2 - Bug fixes & polishing, plus slight tweaks to optimize for new tagging schemas
