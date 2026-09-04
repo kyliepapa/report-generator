@@ -119,6 +119,14 @@ def run_manual_arrange(photos, **kwargs):
     )
 
 
+def run_outliers(photos, **kwargs):
+    from datasets.outliers.adapter import run
+    return run(
+        photos,
+        outlier_sets=kwargs.get("outlier_sets"),
+    )
+
+
 ROUTES = {
     "plumbing": run_plumbing,
     "water_meter": run_water_meter,
@@ -126,6 +134,7 @@ ROUTES = {
     "subcontracted": run_subcontracted,
     "heat_pump": run_heat_pump,
     "manual_arrange": run_manual_arrange,
+    "outliers": run_outliers,
 }
 
 

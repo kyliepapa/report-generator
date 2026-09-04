@@ -17,3 +17,9 @@ V 2.4.2 - Fixed bugs in the Linear Layout PDF, fixed several spelling errors, mi
 V 3.0.1 - Beta deployment. Refactored entire codebase. Added Multi-measure support, Multi-project support, Subcontracted Measures, Lighting Measures, Single-Use Heat Pump Measures. Introduced Tabbed Interfaces & Heading Injection. Drastically improved PDF generation speed, fixed various bugs & edge cases.
 
 V 3.1.0 - Second Beta deployment. After Stress-testing, will be redeployed as Official. Changes: Refactored entire build pipeline to handle large projects on minimal memory. Increased Lighting Location depth. Added Manual Arrange measure, Usage Analytics, clickable PDF photos, Hiding/Editing Automatic Headings, Expanded Lightboxes with Cropping, Rotation, Tag Editing, & Flagging. Handled several edge cases; fixed bugs surrounding geotags, title persistence, dropping sublocations, & more.
+
+V 3.1.1 - Official deployment. Patched gaps in beta modes, added multi-select in both drag-dropping & photo hiding, fied autoscroll, heading, & capitalization bugs.
+
+V 3.2.0 - Refactored Water Heater/Heat Pump measure, added Intuitive Sort & Multi-Unit Handling. Implemented Basic Mode UI & fixed various bugs.
+
+V 3.2.1 - Added the Outliers measure & fixed package-loading bug.

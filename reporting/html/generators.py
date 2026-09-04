@@ -755,31 +755,36 @@ def _manual_arrange_bucket_section(bucket, zone_prefix):
     return html
 
 
-def _render_manual_arrange(structure, special_rooms_structure=None, zone_prefix=""):
+def _render_manual_arrange(structure, special_rooms_structure=None, zone_prefix="", hide_empty_staging=False):
     staging_items = structure.get("staging_items", []) if isinstance(structure, dict) else []
     buckets = structure.get("buckets", []) if isinstance(structure, dict) else []
     bucket_count = sum(len(b.get("photos", [])) for b in buckets)
     staging_count = sum(1 for it in staging_items if it.get("type") == "photo")
     photo_count = staging_count + bucket_count
+    has_staging_content = any(
+        it.get("type") in ("photo", "heading") for it in staging_items
+    )
+    show_staging = not (hide_empty_staging and not has_staging_content)
 
     html = f"""<div class="summary">
         <div class="summary-item"><span class="number">{photo_count}</span><div class="label">Photos</div></div>
     </div>
     <div class="content">"""
 
-    zid = _zone_id(zone_prefix, "staging")
-    html += f'<div class="subcontract-grid photo-grid" data-zone="{zid}">'
+    if show_staging:
+        zid = _zone_id(zone_prefix, "staging")
+        html += f'<div class="subcontract-grid photo-grid" data-zone="{zid}">'
 
-    photo_idx = 0
-    for item in staging_items:
-        if item.get("type") == "heading":
-            html += _subcontract_heading_html(item)
-        elif item.get("type") == "photo":
-            photo_idx += 1
-            pd = _subcontract_photo_dict(item.get("photo"))
-            html += make_photo_card_html(pd, idx=photo_idx)
+        photo_idx = 0
+        for item in staging_items:
+            if item.get("type") == "heading":
+                html += _subcontract_heading_html(item)
+            elif item.get("type") == "photo":
+                photo_idx += 1
+                pd = _subcontract_photo_dict(item.get("photo"))
+                html += make_photo_card_html(pd, idx=photo_idx)
 
-    html += '</div>'
+        html += '</div>'
 
     for bucket in buckets:
         html += _manual_arrange_bucket_section(bucket, zone_prefix)
@@ -1060,6 +1065,13 @@ def generate_html_report(measures, unknown_photos=None, unknown_photos_by_projec
         render_fn = determine_render_method(m["shape"])
         if m["shape"] == "location_sublocation_type_fixture_phase":
             inner = render_fn(m["structure"], m.get("special"), phases=m.get("phases"), zone_prefix=m["id"])
+        elif m["shape"] == MANUAL_ARRANGE_SHAPE and m.get("type") == "outliers":
+            inner = _render_manual_arrange(
+                m["structure"],
+                m.get("special"),
+                zone_prefix=m["id"],
+                hide_empty_staging=True,
+            )
         else:
             inner = render_fn(m["structure"], m.get("special"), zone_prefix=m["id"])
         tabs.append({"id": m["id"], "label": m.get("name") or m["type"], "shape": m["shape"], "inner": inner})

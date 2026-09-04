@@ -173,6 +173,16 @@ function manualArrangeFieldsHtml(id) {
         </div>`;
 }
 
+function outliersFieldsHtml(id) {
+    return `
+        <div class="measure-fields" data-type="outliers" id="ol-${id}" style="display:none;">
+            <div class="outlier-sets-wrap">
+                <div id="outlierSetRows-${id}"></div>
+                <button type="button" class="add-project-btn" id="addOutlierSetBtn-${id}">+ Add Set</button>
+            </div>
+        </div>`;
+}
+
 /* ── measure tab creation ─────────────────────────────── */
 
 const measureTypeLabels = {
@@ -181,12 +191,17 @@ const measureTypeLabels = {
     heat_pump: 'Water Heaters / Heat Pumps',
     subcontracted: 'Subcontracted',
     manual_arrange: 'Manual Arrange',
+    outliers: 'Outliers',
     water_meter: 'Water Meter',
 };
 
 function updateMeasureTabLabel(entry) {
     const lbl = entry.tabEl && entry.tabEl.querySelector('.tab-label');
     if (!lbl) return;
+    if (entry.type === 'outliers') {
+        lbl.textContent = 'Outliers';
+        return;
+    }
     const nameInput = entry.panelEl.querySelector('.measure-name');
     const customName = nameInput && nameInput.value.trim();
     lbl.textContent = customName || measureTypeLabels[entry.type] || 'New Measure';
@@ -214,6 +229,7 @@ function createMeasureTab() {
                 <option value="heat_pump">Water Heaters / Heat Pumps</option>
                 <option value="subcontracted">Subcontracted</option>
                 <option value="manual_arrange">Manual Arrange</option>
+                <option value="outliers">Outliers</option>
                 <option value="water_meter">Water Meter</option>
             </select>
         </div>
@@ -229,6 +245,7 @@ function createMeasureTab() {
             ${heatPumpFieldsHtml(id)}
             ${subcontractedFieldsHtml(id)}
             ${manualArrangeFieldsHtml(id)}
+            ${outliersFieldsHtml(id)}
             ${waterMeterFieldsHtml(id)}
             <div class="applicable-projects-section field-group" id="applicableProjects-${id}" style="display:none;">
                 ${makeFieldHeadingHtml('Which projects contain photos for this measure?', 'Select at least one project. Each complete project must be assigned to at least one measure.')}
@@ -237,11 +254,9 @@ function createMeasureTab() {
         </div>`;
     tabPanels.appendChild(panelEl);
 
-    // Init tag builders inside this panel (they're hidden but still fine to init).
-    panelEl.querySelectorAll('.tag-builder').forEach(b => window.initTagBuilder(b));
-    if (typeof window.initLocationLevels === 'function') {
-        window.initLocationLevels(id);
-    }
+    // Init tag builders for static measure fields (not outliers — those init per row).
+    panelEl.querySelectorAll('.measure-fields:not([data-type="outliers"]) .tag-builder')
+        .forEach(b => window.initTagBuilder(b));
 
     const select = panelEl.querySelector('.measure-select');
     select.addEventListener('change', () => onMeasureTypeChange(id, select.value));
@@ -318,10 +333,25 @@ function onMeasureTypeChange(id, type) {
     const kwBuilder = document.getElementById(`measureKeywords-${id}Builder`);
     if (kwBuilder) {
         const kwGroup = kwBuilder.closest('.field-group');
-        if (kwGroup) kwGroup.style.display = (type === 'subcontracted' || type === 'manual_arrange') ? 'none' : '';
+        if (kwGroup) {
+            kwGroup.style.display = (type === 'subcontracted' || type === 'manual_arrange' || type === 'outliers') ? 'none' : '';
+        }
     }
 
-    if (type === 'lighting') updateLightingNumericUI(id);
+    const nameGroup = entry.panelEl.querySelector('.measure-name')?.closest('.field-group');
+    if (nameGroup) {
+        nameGroup.style.display = type === 'outliers' ? 'none' : '';
+    }
+
+    if (type === 'lighting' && typeof window.initLocationLevels === 'function') {
+        window.initLocationLevels(id);
+        updateLightingNumericUI(id);
+    }
+
+    if (type === 'outliers' && typeof window.initOutlierSets === 'function') {
+        window.initOutlierSets(id);
+    }
+
     if (type === 'heat_pump') {
         updateHeatPumpFixtureUI(id);
         updateHeatPumpLocationUI(id);
@@ -329,7 +359,7 @@ function onMeasureTypeChange(id, type) {
 
     updateMeasureTabLabel(entry);
     refreshProjectChecklists();
-    if (typeof window.applyBasicModeUI === 'function') window.applyBasicModeUI(panelEl);
+    if (typeof window.applyBasicModeUI === 'function') window.applyBasicModeUI(entry.panelEl);
 }
 
 function removeMeasureTab(id) {
@@ -437,7 +467,7 @@ function refreshProjectChecklists() {
         const checklist = document.getElementById(`projectChecklist-${entry.id}`);
         if (!section || !checklist) return;
 
-        const show = multi && entry.type;
+        const show = multi && entry.type && entry.type !== 'outliers';
         section.style.display = show ? 'block' : 'none';
         if (!show) return;
 
@@ -481,7 +511,12 @@ function refreshProjectChecklists() {
 }
 
 if (typeof window.onProjectPairsChange === 'function') {
-    window.onProjectPairsChange(refreshProjectChecklists);
+    window.onProjectPairsChange(() => {
+        refreshProjectChecklists();
+        if (typeof window.refreshAllOutlierProjectSelects === 'function') {
+            window.refreshAllOutlierProjectSelects();
+        }
+    });
 }
 
 // Exposed for generate-report.js

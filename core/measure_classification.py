@@ -77,6 +77,7 @@ class MeasureConfig:
     measure_mark: str = ""
     key_source: str = "tags"
     applicable_projects: List[str] = field(default_factory=list)
+    outlier_sets: List[Dict[str, Any]] = field(default_factory=list)
 
 
 # ---------------- Duplicate measure-keyword detection ----------------
@@ -120,6 +121,11 @@ class ManualArrangeConfigError(ValueError):
     pass
 
 
+class OutliersConfigError(ValueError):
+    """Raised when outliers measure configuration is invalid."""
+    pass
+
+
 def _get_source_project_id(photo: Any) -> str:
     if isinstance(photo, dict):
         return str(photo.get("source_project_id") or "").strip()
@@ -154,6 +160,18 @@ def validate_multi_project_config(
     claimed: Set[str] = set()
 
     for measure in measures:
+        if measure.type == "outliers":
+            for raw_set in measure.outlier_sets or []:
+                pid = str(raw_set.get("project_id") or "").strip()
+                if pid:
+                    if pid not in complete_ids:
+                        raise MultiProjectConfigError(
+                            f"Outliers measure '{measure.name or measure.id}' "
+                            f"references unknown project ID '{pid}'."
+                        )
+                    claimed.add(pid)
+            continue
+
         apps = [str(p).strip() for p in measure.applicable_projects if str(p).strip()]
         if not apps:
             raise MultiProjectConfigError(
@@ -172,6 +190,42 @@ def validate_multi_project_config(
         raise MultiProjectConfigError(
             f"Project(s) not assigned to any measure: {', '.join(unclaimed_nicks)}."
         )
+
+
+def validate_outliers_config(measures: List[MeasureConfig]) -> None:
+    for measure in measures:
+        if measure.type != "outliers":
+            continue
+        sets = measure.outlier_sets or []
+        if not sets:
+            raise OutliersConfigError(
+                f"Outliers measure '{measure.name or measure.id}' requires at least one set."
+            )
+        section_names: Set[str] = set()
+        for idx, raw_set in enumerate(sets, start=1):
+            section = str(raw_set.get("section_name") or "").strip()
+            if not section:
+                raise OutliersConfigError(f"Outliers set {idx}: section name is required.")
+            key = section.lower()
+            if key in section_names:
+                raise OutliersConfigError(
+                    f"Outliers set {idx}: duplicate section name '{section}'."
+                )
+            section_names.add(key)
+
+            project_id = str(raw_set.get("project_id") or "").strip()
+            if not project_id:
+                raise OutliersConfigError(f"Outliers set {idx}: project is required.")
+
+            tags = normalize_tags(raw_set.get("tags") or [])
+            if not tags:
+                raise OutliersConfigError(f"Outliers set {idx}: at least one identifier tag is required.")
+
+            mode = str(raw_set.get("tag_match_mode") or "any").strip().lower()
+            if mode not in ("any", "all"):
+                raise OutliersConfigError(
+                    f"Outliers set {idx}: tag_match_mode must be 'any' or 'all'."
+                )
 
 
 def _subcon_key_matches(key: str, hash_char: str, measure_mark: str) -> bool:
@@ -342,6 +396,8 @@ def _build_sole_project_owners(measures: List[MeasureConfig]) -> Dict[str, str]:
     """project_id -> measure_id when only one measure claims that project."""
     owners: Dict[str, Set[str]] = {}
     for measure in measures:
+        if measure.type in ("manual_arrange", "outliers"):
+            continue
         for pid in measure.applicable_projects:
             pid = str(pid).strip()
             if pid:
@@ -381,7 +437,7 @@ def classify_photos(
         return ClassificationResult(by_measure=by_measure, unknown=unknown, decisions=decisions)
 
     manual_arrange_by_project = _build_manual_arrange_by_project(measures)
-    tag_classifiable = [m for m in measures if m.type != "manual_arrange"]
+    tag_classifiable = [m for m in measures if m.type not in ("manual_arrange", "outliers")]
 
     keyword_owners: Dict[str, Set[str]] = {}
     for measure in tag_classifiable:
@@ -419,7 +475,9 @@ def classify_photos(
                 continue
 
         # Tag-based passes only consider non-manual-arrange measures
-        eligible_tag_ids = {m.id for m in eligible if m.type != "manual_arrange"}
+        eligible_tag_ids = {
+            m.id for m in eligible if m.type not in ("manual_arrange", "outliers")
+        }
 
         # Pass 1: Measure Keywords
         matched_ids: Set[str] = set()
@@ -536,6 +594,7 @@ def run_measure_classification(
 
     validate_subcontracted_measures(measures)
     validate_manual_arrange_config(measures, multi_project=multi_project)
+    validate_outliers_config(measures)
 
     if multi_project:
         validate_multi_project_config(measures, complete_projects or [])

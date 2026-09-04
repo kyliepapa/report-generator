@@ -29,9 +29,11 @@ from core.measure_classification import (
     DuplicateMeasureKeywordError,
     SubcontractedConfigError,
     ManualArrangeConfigError,
+    OutliersConfigError,
     MultiProjectConfigError,
     run_measure_classification,
 )
+from core.outlier_extraction import extract_outliers
 from reporting.html import generators
 from datasets.plumbing.config import PLUMBING
 from datasets.lighting.config import LIGHTING, level1_tags, parse_location_levels
@@ -163,6 +165,7 @@ def _build_measure_configs(measures_payload):
             measure_mark=str(m.get("measure_mark") or "").strip(),
             key_source=str(m.get("key_source") or "tags").lower(),
             applicable_projects=_to_list(m.get("applicable_projects")),
+            outlier_sets=m.get("outlier_sets") or [],
         )
         for m in measures_payload
     ]
@@ -298,6 +301,13 @@ def _configure_and_sort_measure(measure_type, measure_payload, measure_photos, j
         # job_manager.log(job_id, repr(sort_output.issues))
 
         return sort_output
+
+    elif measure_type == "outliers":
+        return run_sort(
+            "outliers",
+            measure_photos,
+            outlier_sets=measure_payload.get("outlier_sets") or [],
+        )
 
     else:
         raise ValueError(f"'{measure_type}' is not supported yet — pick a different measure type.")
@@ -508,6 +518,12 @@ def start_job():
                 error_message = str(e)
                 job_manager.finish(job_id, "error")
                 return
+            except OutliersConfigError as e:
+                job_manager.log(job_id, f"❌ ERROR: {e}")
+                error_type = "OutliersConfigError"
+                error_message = str(e)
+                job_manager.finish(job_id, "error")
+                return
             except MultiProjectConfigError as e:
                 job_manager.log(job_id, f"❌ ERROR: {e}")
                 error_type = "MultiProjectConfigError"
@@ -524,30 +540,10 @@ def start_job():
             html_measures = []
             cache_key = project_id
 
-            t_sort = time.time()
-            for measure in measure_configs:
-                measure_photos = classification.by_measure.get(measure.id, [])
-                measure_payload = payload_by_id.get(measure.id, {})
-                job_manager.log(
-                    job_id,
-                    f"🔄 Sorting '{measure.name}' ({measure.type}) — {len(measure_photos)} photo(s)...",
-                )
+            regular_measures = [m for m in measure_configs if m.type != "outliers"]
+            outlier_measures = [m for m in measure_configs if m.type == "outliers"]
 
-                try:
-                    sort_output = _configure_and_sort_measure(
-                        measure.type, measure_payload, measure_photos, job_id, cache_key, project_name
-                    )
-                except ValueError as e:
-                    job_manager.log(job_id, f"⚠️ Skipping '{measure.name}': {e}")
-                    measure_outcomes[measure.id] = {
-                        "photos_classified": len(measure_photos),
-                        "sort_shape": None,
-                        "sort_issues": [{"error": str(e)}],
-                        "issues_count": 1,
-                        "skipped": True,
-                    }
-                    continue
-
+            def _record_sorted_measure(measure, measure_payload, sort_output, measure_photos):
                 issues = sort_output.issues or []
                 measure_outcomes[measure.id] = {
                     "photos_classified": len(measure_photos),
@@ -590,14 +586,90 @@ def start_job():
                     )
                 html_measures.append(html_entry)
 
+            t_sort = time.time()
+            for measure in regular_measures:
+                measure_photos = classification.by_measure.get(measure.id, [])
+                measure_payload = payload_by_id.get(measure.id, {})
+                job_manager.log(
+                    job_id,
+                    f"🔄 Sorting '{measure.name}' ({measure.type}) — {len(measure_photos)} photo(s)...",
+                )
+
+                try:
+                    sort_output = _configure_and_sort_measure(
+                        measure.type, measure_payload, measure_photos, job_id, cache_key, project_name
+                    )
+                except ValueError as e:
+                    job_manager.log(job_id, f"⚠️ Skipping '{measure.name}': {e}")
+                    measure_outcomes[measure.id] = {
+                        "photos_classified": len(measure_photos),
+                        "sort_shape": None,
+                        "sort_issues": [{"error": str(e)}],
+                        "issues_count": 1,
+                        "skipped": True,
+                    }
+                    continue
+
+                _record_sorted_measure(measure, measure_payload, sort_output, measure_photos)
+
+            for measure in outlier_measures:
+                measure_payload = payload_by_id.get(measure.id, {})
+                outlier_sets = measure_payload.get("outlier_sets") or []
+                job_manager.log(
+                    job_id,
+                    f"📤 Extracting outliers for '{measure.name}' — {len(outlier_sets)} set(s)...",
+                )
+
+                extraction = extract_outliers(
+                    outlier_sets,
+                    sorted_data["measures"],
+                    sorted_data["unknown"],
+                    single_project=not is_multi,
+                    outlier_measure_id=measure.id,
+                )
+                sorted_data["unknown"] = extraction.updated_unknown
+
+                from core.sort_result import SortOutput
+                sort_output = SortOutput(
+                    dataset_key="outliers",
+                    shape="manual_arrange_sequence",
+                    structure=extraction.structure,
+                    issues=extraction.issues,
+                )
+
+                for mutated_id in extraction.mutated_measure_ids:
+                    mutated = sorted_data["measures"].get(mutated_id)
+                    if not mutated:
+                        continue
+                    job_manager.save_sorted_structure(
+                        project_id=cache_key,
+                        measure_id=mutated_id,
+                        structure=mutated["sorted_structure"],
+                        photos=classification.by_measure.get(mutated_id, []),
+                        special_rooms_structure=mutated.get("special"),
+                        sort_mode=mutated.get("shape"),
+                        name=mutated.get("name"),
+                    )
+                    for html_entry in html_measures:
+                        if html_entry["id"] == mutated_id:
+                            html_entry["structure"] = mutated["sorted_structure"]
+
+                _record_sorted_measure(measure, measure_payload, sort_output, [])
+
+                stolen_count = sum(
+                    len(b.get("photos", []))
+                    for b in extraction.structure.get("buckets", [])
+                )
+                job_manager.log(job_id, f"✅ Extracted {stolen_count} outlier photo(s)")
+
             timing["sort_total"] = int((time.time() - t_sort) * 1000)
             job_manager.set_sorted_data(job_id, sorted_data)
 
             if html_measures:
                 job_manager.log(job_id, "🏗 Generating HTML report...")
                 t_html = time.time()
-                if is_multi and classification.unknown:
-                    unknown_by_project = _build_unknown_by_project(classification.unknown)
+                if is_multi and sorted_data["unknown"]:
+                    unknown_by_project = _build_unknown_by_project(sorted_data["unknown"])
                     generators.generate_html_report(
                         html_measures,
                         unknown_photos_by_project=unknown_by_project,
@@ -606,7 +678,7 @@ def start_job():
                 else:
                     generators.generate_html_report(
                         html_measures,
-                        unknown_photos=classification.unknown,
+                        unknown_photos=sorted_data["unknown"],
                         title=report_title,
                     )
                 timing["html_gen"] = int((time.time() - t_html) * 1000)

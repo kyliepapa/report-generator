@@ -505,6 +505,87 @@
             color: var(--text);
             border-color: var(--accent);
         }
+
+        /* ── Outliers sets (project-pairs style, placeholder-only) ── */
+        .outlier-sets-wrap {
+            margin-top: 4px;
+        }
+        .outlier-set-block {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 14px;
+            padding-bottom: 14px;
+            border-bottom: 1px dashed var(--border);
+        }
+        .outlier-set-block:last-child {
+            margin-bottom: 8px;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+        .outlier-set-block .field-input,
+        .outlier-set-block .tag-builder {
+            width: 100%;
+        }
+        .outlier-match-switch {
+            position: relative;
+            display: inline-block;
+            align-self: flex-start;
+            cursor: pointer;
+        }
+        .outlier-match-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+            position: absolute;
+        }
+        .outlier-match-track {
+            position: relative;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            width: 88px;
+            height: 28px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            overflow: hidden;
+        }
+        .outlier-match-opt {
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            color: var(--muted);
+            transition: color 0.15s;
+            user-select: none;
+        }
+        .outlier-match-thumb {
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: calc(50% - 2px);
+            height: calc(100% - 4px);
+            background: var(--accent);
+            border-radius: 20px;
+            transition: transform 0.2s cubic-bezier(.4,0,.2,1);
+            z-index: 0;
+        }
+        .outlier-match-switch input:not(:checked) ~ .outlier-match-track .outlier-match-or {
+            color: #fff;
+        }
+        .outlier-match-switch input:checked ~ .outlier-match-track .outlier-match-and {
+            color: #fff;
+        }
+        .outlier-match-switch input:checked + .outlier-match-track .outlier-match-thumb {
+            transform: translateX(100%);
+        }
+        .outlier-match-switch input:focus-visible + .outlier-match-track {
+            box-shadow: 0 0 0 3px rgba(46,134,222,0.25);
+        }
+
         .project-checklist {
             display: flex;
             flex-direction: column;
@@ -945,6 +1026,7 @@
 <script src="scripts/form-state.js"></script>
 <script src="scripts/project-pairs.js"></script>
 <script src="scripts/location-levels.js"></script>
+<script src="scripts/outlier-sets.js"></script>
 <script src="scripts/tab-manager.js"></script>
 <script src="scripts/basic-mode.js"></script>
 <script src="scripts/sidebar-resize.js"></script>

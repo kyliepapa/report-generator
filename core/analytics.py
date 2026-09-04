@@ -118,6 +118,16 @@ def _measure_config_snapshot(measure_type: str, payload: dict) -> dict:
             "pre_sort_buckets": _to_list(payload.get("pre_sort_buckets")),
             "allow_conflicting_tags": bool(payload.get("allow_conflicting_tags", True)),
         }
+    if mtype == "outliers":
+        sets = []
+        for raw_set in payload.get("outlier_sets") or []:
+            sets.append({
+                "section_name": str(raw_set.get("section_name") or ""),
+                "project_id": str(raw_set.get("project_id") or ""),
+                "tags": _to_list(raw_set.get("tags")),
+                "tag_match_mode": str(raw_set.get("tag_match_mode") or "any"),
+            })
+        return {"outlier_sets": sets}
     return {}
 
 

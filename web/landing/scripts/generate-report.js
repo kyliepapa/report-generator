@@ -112,6 +112,11 @@ function buildManualArrangePayload(id, panelEl) {
     };
 }
 
+function buildOutliersPayload(id, panelEl) {
+    const sets = window.getOutlierSets ? window.getOutlierSets(id) : [];
+    return { outlier_sets: sets };
+}
+
 function validateMultiProject(configured, errors) {
     if (!window.isMultiProject || !window.isMultiProject()) return;
 
@@ -141,12 +146,21 @@ function validateMultiProject(configured, errors) {
 
     const claimed = new Set();
     configured.forEach(tab => {
+        if (tab.type === 'outliers') {
+            const sets = window.getOutlierSets ? window.getOutlierSets(tab.id) : [];
+            sets.forEach(s => {
+                if (s.project_id) claimed.add(s.project_id);
+            });
+            return;
+        }
         const checked = window.getCheckedProjectIds
             ? window.getCheckedProjectIds(tab.id)
             : [];
         if (checked.length === 0) {
-            const label = tab.panelEl.querySelector('.measure-name')?.value.trim()
-                || tab.type || tab.id;
+            const label = tab.type === 'outliers'
+                ? 'Outliers'
+                : (tab.panelEl.querySelector('.measure-name')?.value.trim()
+                    || tab.type || tab.id);
             errors.push(`Select at least one project for measure "${label}".`);
         }
         checked.forEach(pid => claimed.add(pid));
@@ -173,22 +187,24 @@ function buildMeasurePayload(tab) {
         typePayload = buildSubcontractedPayload(tab.id, panelEl);
     } else if (tab.type === 'manual_arrange') {
         typePayload = buildManualArrangePayload(tab.id, panelEl);
+    } else if (tab.type === 'outliers') {
+        typePayload = buildOutliersPayload(tab.id, panelEl);
     }
 
     const payload = {
         id: tab.id,
         type: tab.type,
-        name: measureName,
+        name: tab.type === 'outliers' ? 'Outliers' : measureName,
         ...typePayload,
     };
 
-    if (tab.type !== 'subcontracted' && tab.type !== 'manual_arrange') {
+    if (tab.type !== 'subcontracted' && tab.type !== 'manual_arrange' && tab.type !== 'outliers') {
         payload.measure_keywords = window.getMeasureKeywords
             ? window.getMeasureKeywords(tab.id, panelEl)
             : getTagsFor(`measureKeywords-${tab.id}Builder`, panelEl);
     }
 
-    if (window.isMultiProject && window.isMultiProject()) {
+    if (window.isMultiProject && window.isMultiProject() && tab.type !== 'outliers') {
         payload.applicable_projects = window.getCheckedProjectIds
             ? window.getCheckedProjectIds(tab.id)
             : [];
@@ -317,6 +333,28 @@ function validateMeasure(type, id, panelEl, errors) {
         }
     } else if (type === 'manual_arrange') {
         // Pre-sort buckets optional; no extra required fields.
+    } else if (type === 'outliers') {
+        const sets = window.getOutlierSets ? window.getOutlierSets(id) : [];
+        if (sets.length === 0) {
+            errors.push('Add at least one Outliers set.');
+        }
+        const sectionNames = new Set();
+        sets.forEach((set, idx) => {
+            const n = idx + 1;
+            if (!set.section_name) {
+                errors.push(`Outliers set ${n}: enter a section name.`);
+            } else if (sectionNames.has(set.section_name.toLowerCase())) {
+                errors.push(`Outliers set ${n}: section name "${set.section_name}" is duplicated.`);
+            } else {
+                sectionNames.add(set.section_name.toLowerCase());
+            }
+            if (!set.project_id) {
+                errors.push(`Outliers set ${n}: select a project.`);
+            }
+            if (!set.tags || set.tags.length === 0) {
+                errors.push(`Outliers set ${n}: add at least one identifier tag.`);
+            }
+        });
     }
 }
 
